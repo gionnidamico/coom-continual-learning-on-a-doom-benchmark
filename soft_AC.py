@@ -13,10 +13,13 @@ from torch.distributions import Normal
 from COOM.env.builder import make_env
 from COOM.utils.config import Scenario
 
+
+
 # use gpu
 use_cuda = torch.cuda.is_available()
 device   = torch.device("cuda" if use_cuda else "cpu")
 print(device)
+
 
 # replay buffer implementation
 class ReplayBuffer:
@@ -41,9 +44,9 @@ class ReplayBuffer:
     
 
 # actor network
-class Actor(nn.Module):
+class ValueNetwork(nn.Module):
     def __init__(self, state_dim, hidden_dim, init_w=3e-3):
-        super(Actor, self).__init__()
+        super(ValueNetwork, self).__init__()
         
         self.linear1 = nn.Linear(state_dim, hidden_dim)
         self.linear2 = nn.Linear(hidden_dim, hidden_dim)
@@ -60,13 +63,13 @@ class Actor(nn.Module):
         
 
 # critic network      
-class Critic(nn.Module):
+class SoftQNetwork(nn.Module):
     def __init__(self, num_inputs, num_actions, hidden_size, init_w=3e-3):
-        super(Critic, self).__init__()
+        super(SoftQNetwork, self).__init__()
         
         self.linear1 = nn.Linear(num_inputs , hidden_size)  #+ num_actions
         self.linear2 = nn.Linear(hidden_size, hidden_size)
-        self.output_layer = nn.Linear(hidden_size, num_actions) #1
+        self.output_layer = nn.Linear(hidden_size, 1) 
         
         # self.linear3.weight.data.uniform_(-init_w, init_w)
         # self.linear3.bias.data.uniform_(-init_w, init_w)
@@ -76,21 +79,13 @@ class Critic(nn.Module):
         x = F.relu(self.linear2(x))
         q_values = self.output_layer(x)
         return q_values
-        # print(f'stato:{state.shape}')
-        # print(f'azione:{action.shape}')
-        # #action = action.unsqueeze(1) #####
-        # x = torch.cat([state, action], 1)
-        # print(f'x:{x.shape}')
-        # x = F.relu(self.linear1(x))
-        # x = F.relu(self.linear2(x))
-        # x = self.linear3(x)
-        # return x
+       
         
 
 # soft AC agent network        
-class Agent(nn.Module):
+class PolicyNetwork(nn.Module):
     def __init__(self, state_dim, num_actions, hidden_size, init_w=3e-3, log_std_min=-20, log_std_max=2):
-        super(Agent, self).__init__()
+        super(PolicyNetwork, self).__init__()
         
         # self.log_std_min = log_std_min
         # self.log_std_max = log_std_max
@@ -109,22 +104,11 @@ class Agent(nn.Module):
         # self.log_std_linear.bias.data.uniform_(-init_w, init_w)
         
     def forward(self, state):
-        #x = F.relu(self.linear1(state.flatten()))
-        #print(state.flatten().shape)
-        #print(x.shape)
-        
         x = F.relu(self.linear1(state))
         x = F.relu(self.linear2(x))
         x = self.output_layer(x)
         return F.softmax(x, dim=1)  # Output probabilities for each action
 
-        # x = F.relu(self.linear2(x))
-        
-        # mean    = self.mean_linear(x)
-        # log_std = self.log_std_linear(x)
-        # log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
-        
-        # return mean, log_std
     
     def evaluate(self, state, epsilon=1e-6):
         state = torch.Tensor(state).unsqueeze(0).to(device)
@@ -132,18 +116,9 @@ class Agent(nn.Module):
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
         log_prob = dist.log_prob(action)
-        return action.item(), log_prob
+        return action.item(), log_prob  #.transpose(0, 1)     #action.item()
 
-        # mean, log_std = self.forward(state)
-        # std = log_std.exp()
-        
-        # normal = Normal(0, 1)
-        # z      = normal.sample()
-        # action = torch.tanh(mean+ std*z.to(device))
-        # log_prob = Normal(mean, std).log_prob(mean+ std*z.to(device)) - torch.log(1 - action.pow(2) + epsilon)
-        # return action, log_prob, z, mean, log_std
-        
-    
+         
     def get_action(self, state):
         state = torch.FloatTensor(state).unsqueeze(0).to(device)
         probs = self.forward(state)
@@ -151,27 +126,7 @@ class Agent(nn.Module):
         return highest_prob_action.item()
 
 
-        # state = torch.FloatTensor(state).unsqueeze(0).to(device)
-        # mean, log_std = self.forward(state)
-        # std = log_std.exp()
         
-        # normal = Normal(0, 1)
-        # z      = normal.sample().to(device)
-        # action = torch.tanh(mean + std*z)
-        
-        # action = action.cpu().detach().numpy()
-
-        # print(f'getactionmean:{mean}')
-        # print(f'getaction:{action[0]}')
-        # return action#[0] #np.argmax(action[0]) 
-
-    # da vedere
-    # def get_action_greedy(self, state):
-    #     state = torch.FloatTensor(state).unsqueeze(0).to(device)
-    #     mean, log_std = self.forward(state)
-    #     action = torch.tanh(mean)
-    #     action  = action.cpu().detach().numpy()
-    #     return action[0]
     
 
 
@@ -208,7 +163,7 @@ def soft_q_update(batch_size,gamma=0.99,soft_tau=1e-2,):
     soft_q_optimizer2.step()    
     
     # Training Value Function
-    predicted_new_q_value = torch.min(soft_q_net1(state, new_action),soft_q_net2(state, new_action))
+    predicted_new_q_value = torch.min(soft_q_net1(state, new_action), soft_q_net2(state, new_action))
     target_value_func = predicted_new_q_value - log_prob
     value_loss = value_criterion(predicted_value, target_value_func.detach())
     #print("V Loss")
@@ -253,12 +208,13 @@ print(action_dim)
 
 hidden_dim = 256
 
-value_net = Actor(state_dim, hidden_dim).to(device)
-target_value_net = Actor(state_dim, hidden_dim).to(device)
+value_net = ValueNetwork(state_dim, hidden_dim).to(device)
+target_value_net = ValueNetwork(state_dim, hidden_dim).to(device)
 
-soft_q_net1 = Critic(state_dim, action_dim, hidden_dim).to(device)
-soft_q_net2 = Critic(state_dim, action_dim, hidden_dim).to(device)
-policy_net = Agent(state_dim, action_dim, hidden_dim).to(device)
+soft_q_net1 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
+soft_q_net2 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
+
+policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim).to(device)
 
 for target_param, param in zip(target_value_net.parameters(), value_net.parameters()):
     target_param.data.copy_(param.data)
@@ -280,23 +236,20 @@ replay_buffer_size = 1000000
 replay_buffer = ReplayBuffer(replay_buffer_size)
 
 
-
-max_frames  = 10000
 max_steps   = 500
-frame_idx   = 0
 episode = 0
-max_episode = 1
+episodes = 2
 rewards     = []
 losses = []
 batch_size  = 1
-desired_rew = -100
 window = 50
 
 
 
 from statistics import mean
 
-while frame_idx < max_frames:
+
+for episode in range(episodes):
     state, _ = env.reset()
     #state = state.flatten()
 
@@ -314,7 +267,7 @@ while frame_idx < max_frames:
         #if truncated: print("!!! truncated")
         done = terminated
 
-        # Assuming next_state is a LazyFrames object
+        # corrects 'LazyFrames object' error
         state_array = np.array(state)
         state_flattened = state_array.flatten()
         next_state_array = np.array(next_state)
@@ -322,37 +275,31 @@ while frame_idx < max_frames:
         # action_array = np.array(action)
         # action_flattened = action_array.flatten()
 
-        #print(f'actionflatten:{action}')
+
         replay_buffer.push(state_flattened, action, reward, next_state_flattened, terminated)
-        #print(f'len:{len(replay_buffer)}')
         if len(replay_buffer) > batch_size:
             loss = soft_q_update(batch_size)
             losses_ep.append(loss)
         
+        #print(reward)
         state = next_state
         episode_reward += reward
-        frame_idx += 1
-        
-        # if frame_idx % 1000 == 0:
-        #     plot(frame_idx, rewards)
+       
         
         if done:
             break
 
-    if episode == max_episode:
-        break
+    
         
     episode += 1
     
 
     rewards.append(episode_reward)
     losses.append(mean(losses_ep))
-    mean_rewards = mean(rewards[-window:])
-    mean_loss = mean(losses[-window:])
-    print("\rEpisode {:d} Mean Rewards {:.2f}  Episode reward = {:.2f}   mean loss = {:.2f}\t\t".format(
-                            episode, mean_rewards, episode_reward, mean_loss), end="")
-    #if mean_rewards >= desired_rew:
-    #    break
+    
+    print("\rEpisode {:d}:  Total Reward = {:.2f}   Loss = {:.2f}\t\t".format(
+                            episode, episode_reward, loss), end="")     # loss is the last loss of the episode
+
 
 
 
@@ -392,4 +339,4 @@ for steps in range(1000):
     state_flattened = next_state_flattened
 
 
-print("Tot reward in one episode: ", tot_rew)
+print("Tot reward in episode: ", tot_rew)
