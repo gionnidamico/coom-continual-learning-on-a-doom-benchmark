@@ -18,7 +18,7 @@ from COOM.utils.config import Scenario
 # use gpu
 use_cuda = torch.cuda.is_available()
 device   = torch.device("cuda" if use_cuda else "cpu")
-print(device)
+print("Using device:", device)
 
 
 # replay buffer implementation
@@ -45,20 +45,21 @@ class ReplayBuffer:
 
 # actor network
 class ValueNetwork(nn.Module):
-    def __init__(self, state_dim, hidden_dim, init_w=3e-3):
+    def __init__(self, state_dim, num_actions, hidden_dim, init_w=3e-3):    #added num_actions
         super(ValueNetwork, self).__init__()
         
         self.linear1 = nn.Linear(state_dim, hidden_dim)
         self.linear2 = nn.Linear(hidden_dim, hidden_dim)
-        self.linear3 = nn.Linear(hidden_dim, 1)
+        self.output_layer = nn.Linear(hidden_dim, num_actions)
         
-        self.linear3.weight.data.uniform_(-init_w, init_w)
-        self.linear3.bias.data.uniform_(-init_w, init_w)
+        # weight initialization correction
+        self.output_layer.weight.data.uniform_(-init_w, init_w)
+        self.output_layer.bias.data.uniform_(-init_w, init_w)
         
     def forward(self, state):
         x = F.relu(self.linear1(state))
         x = F.relu(self.linear2(x))
-        x = self.linear3(x)
+        x = self.output_layer(x)
         return x
         
 
@@ -69,12 +70,14 @@ class SoftQNetwork(nn.Module):
         
         self.linear1 = nn.Linear(num_inputs , hidden_size)  #+ num_actions
         self.linear2 = nn.Linear(hidden_size, hidden_size)
-        self.output_layer = nn.Linear(hidden_size, 1) 
+        self.output_layer = nn.Linear(hidden_size, num_actions)           # vedere perchè dovebbe restituire il vettore dei q values?
         
-        # self.linear3.weight.data.uniform_(-init_w, init_w)
-        # self.linear3.bias.data.uniform_(-init_w, init_w)
+        # weight initialization correction
+        self.output_layer.weight.data.uniform_(-init_w, init_w)
+        self.output_layer.bias.data.uniform_(-init_w, init_w)
+
         
-    def forward(self, state, action):
+    def forward(self, state, action):       # new_action????
         x = F.relu(self.linear1(state))
         x = F.relu(self.linear2(x))
         q_values = self.output_layer(x)
@@ -84,47 +87,99 @@ class SoftQNetwork(nn.Module):
 
 # soft AC agent network        
 class PolicyNetwork(nn.Module):
-    def __init__(self, state_dim, num_actions, hidden_size, init_w=3e-3, log_std_min=-20, log_std_max=2):
+    def __init__(self, state_dim, num_actions, hidden_size, device, init_w=3e-3,  log_std_min=-20, log_std_max=2):
         super(PolicyNetwork, self).__init__()
+
+        self.num_actions = num_actions
+        self.device = device
         
-        # self.log_std_min = log_std_min
-        # self.log_std_max = log_std_max
+        self.target_entropy = -np.prod(self.num_actions.shape) #.shape? (should be -12)
+        self.logalpha = torch.zeros(1,requires_grad=True, device=self.device)
+        self.alpha_optimizer = optim.Adam([self.logalpha],lr=3e-4)
+
+        self.log_std_min = log_std_min
+        self.log_std_max = log_std_max
         
         self.linear1 = nn.Linear(state_dim, hidden_size)
         self.linear2 = nn.Linear(hidden_size, hidden_size)
 
-        self.output_layer = nn.Linear(hidden_size, num_actions) ###usare init 
-        
-        # self.mean_linear = nn.Linear(hidden_size, num_actions)
-        # self.mean_linear.weight.data.uniform_(-init_w, init_w)
-        # self.mean_linear.bias.data.uniform_(-init_w, init_w)
-        
-        # self.log_std_linear = nn.Linear(hidden_size, num_actions)
-        # self.log_std_linear.weight.data.uniform_(-init_w, init_w)
-        # self.log_std_linear.bias.data.uniform_(-init_w, init_w)
+        #self.output_layer = nn.Linear(hidden_size, num_actions) ###usare init 
+        self.output_layer_mean = nn.Linear(hidden_size, num_actions)
+        self.output_layer_log_std = nn.Linear(hidden_size, num_actions)
+
+
+        # # weight initialization correction
+        # self.output_layer.weight.data.uniform_(-init_w, init_w)
+        # self.output_layer.bias.data.uniform_(-init_w, init_w)
         
     def forward(self, state):
         x = F.relu(self.linear1(state))
         x = F.relu(self.linear2(x))
-        x = self.output_layer(x)
-        return F.softmax(x, dim=1)  # Output probabilities for each action
+
+        x_mean = self.output_layer_mean(x)
+        x_log_std = self.output_layer_log_std(x)
+        x_log_std = torch.clamp(x_log_std, self.log_std_min, self.log_std_max)
+
+        return x_mean, x_log_std
+
+        #x = self.output_layer(x)#.unsqueeze(0)
+
+       
+
+
+
+        #print(F.softmax(x, dim=1))
+        #print(f'forwardpass state: {state.shape}, x: {x.shape}')
+        #if F.softmax(x, dim=0).any()==np.NaN: print(f'prob is {x}')
+        #return F.softmax(x, dim=1)  # Output probabilities for each action
 
     
     def evaluate(self, state, epsilon=1e-6):
-        state = torch.Tensor(state).unsqueeze(0).to(device)
-        probs = self.forward(state)
-        dist = torch.distributions.Categorical(probs)
-        action = dist.sample()
-        log_prob = dist.log_prob(action)
-        return action.item(), log_prob  #.transpose(0, 1)     #action.item()
 
+        mean, log_std = self.forward(state)
+        # Get a Normal distribution with those values
+        pi_s = Normal(mean, log_std.exp())
+        # reparameterization trick.
+        pre_tanh_action = pi_s.rsample()
+        tanh_action = torch.tanh(pre_tanh_action)
+        #squash the action to be in range -1, 1.
+        #action = self.rescale_fn(tanh_action)
+        # rescale to be the environment expected range
+        log_prob = pi_s.log_prob(pre_tanh_action) - torch.log(
+        (1 - tanh_action.pow(2)).clamp(0, 1) + epsilon)
+        log_prob = log_prob.sum(dim=1, keepdim=True)
+    
+        return action, log_prob #,self.rescale_fn(torch.tanh(mean))
+
+
+        '''
+        state = torch.Tensor(state).to(device)  #.unsqueeze(0)
+        probs = self.forward(state)#.squeeze()           #vedere
+       
+        
+        #dist = torch.distributions.Categorical(probs)
+       
+        actions = dist.sample() #(self.num_actions,)
+        z = 1e-8  if (probs == 0.0).any() else 0.0               # deals with the case when probs is 0 because log0 does not exists (shifts to a very small values instead)
+        # print(z)
+        log_prob = torch.log(probs + z)   # + z
+
+        #print(actions.shape, log_prob.shape)
+        return actions, log_prob  #.transpose(0, 1)     #action.item()
+        '''
          
     def get_action(self, state):
-        state = torch.FloatTensor(state).unsqueeze(0).to(device)
-        probs = self.forward(state)
+        state = torch.FloatTensor(state).to(device) #.unsqueeze(0)
+        probs = self.forward(state)[0]  # get mean action
         highest_prob_action = torch.argmax(probs, dim=1)
         return highest_prob_action.item()
-
+        # state = torch.FloatTensor(state).unsqueeze(0).to(device)
+        # mean, log_std = self.forward(state)
+        # action = torch.tanh(mean)
+        # action  = action.cpu().detach().numpy()
+        # print(f'action is {action}')
+        # return action[0]
+        
 
         
     
@@ -142,16 +197,27 @@ def soft_q_update(batch_size,gamma=0.99,soft_tau=1e-2,):
     reward     = torch.FloatTensor(reward).unsqueeze(1).to(device)
     done       = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(device)
 
-    predicted_q_value1 = soft_q_net1(state, action)
+    #print(state.shape)
+
+    # current qsa_a and qsa_b
+    predicted_q_value1 = soft_q_net1(state, action)     # action not used
     predicted_q_value2 = soft_q_net2(state, action)
     predicted_value    = value_net(state)
-    new_action, log_prob = policy_net.evaluate(state)   #, epsilon, mean, log_std
-    
+    current_actions, logpi_s = policy_net.evaluate(state)   #, epsilon, mean, log_std
+    target_alpha = (logpi_s + policy_net.target_entropy).detach()
+    alpha_loss = -(policy_net.logalpha * target_alpha).mean()
+
+    # loss of alpha, and here we step alpha’s optimizer.
+    policy_net.alpha_optimizer.zero_grad()
+    alpha_loss.backward()
+    policy_net.alpha_optimizer.step()
+
+    alpha = policy_net.logalpha.exp()
 
     # Training Q Function
     target_value = target_value_net(next_state)
     target_q_value = reward + (1 - done) * gamma * target_value
-    q_value_loss1 = soft_q_criterion1(predicted_q_value1, target_q_value.detach())
+    q_value_loss1 = soft_q_criterion1(predicted_q_value1, target_q_value.detach())   
     q_value_loss2 = soft_q_criterion2(predicted_q_value2, target_q_value.detach())
     #print("Q Loss")
     #print(q_value_loss1)
@@ -163,8 +229,10 @@ def soft_q_update(batch_size,gamma=0.99,soft_tau=1e-2,):
     soft_q_optimizer2.step()    
     
     # Training Value Function
-    predicted_new_q_value = torch.min(soft_q_net1(state, new_action), soft_q_net2(state, new_action))
-    target_value_func = predicted_new_q_value - log_prob
+    predicted_new_q_value = torch.min(soft_q_net1(state, current_actions), soft_q_net2(state, current_actions))
+    #print(predicted_new_q_value.shape, log_prob.shape)
+    target_value_func = predicted_new_q_value - alpha*logpi_s
+
     value_loss = value_criterion(predicted_value, target_value_func.detach())
     #print("V Loss")
     #print(value_loss)
@@ -173,7 +241,7 @@ def soft_q_update(batch_size,gamma=0.99,soft_tau=1e-2,):
     value_optimizer.step()
     
     # Training Policy Function
-    policy_loss = (log_prob - predicted_new_q_value).mean()
+    policy_loss = (alpha*logpi_s - predicted_new_q_value).mean()
 
     policy_optimizer.zero_grad()
     policy_loss.backward()
@@ -208,13 +276,13 @@ print(action_dim)
 
 hidden_dim = 256
 
-value_net = ValueNetwork(state_dim, hidden_dim).to(device)
-target_value_net = ValueNetwork(state_dim, hidden_dim).to(device)
+value_net = ValueNetwork(state_dim, action_dim, hidden_dim).to(device)
+target_value_net = ValueNetwork(state_dim, action_dim, hidden_dim).to(device)
 
 soft_q_net1 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
 soft_q_net2 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
 
-policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim).to(device)
+policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim, device).to(device)
 
 for target_param, param in zip(target_value_net.parameters(), value_net.parameters()):
     target_param.data.copy_(param.data)
@@ -236,18 +304,19 @@ replay_buffer_size = 1000000
 replay_buffer = ReplayBuffer(replay_buffer_size)
 
 
-max_steps   = 500
+max_steps   = 2500       # change
 episode = 0
-episodes = 2
+episodes = 5
 rewards     = []
 losses = []
-batch_size  = 1
-window = 50
+batch_size  = 16
+#window = 50
 
 
 
 from statistics import mean
 
+print("\rTraining STARTING...")
 
 for episode in range(episodes):
     state, _ = env.reset()
@@ -259,9 +328,13 @@ for episode in range(episodes):
     episode_reward = 0
     losses_ep = []
     for step in range(max_steps):
-        action = policy_net.get_action(state_flattened)
-        next_state, reward, terminated, truncated, _= env.step(np.argmax(action))
 
+        if len(replay_buffer) <= batch_size:
+            action = policy_net.get_action(torch.FloatTensor(state_flattened).unsqueeze(0)) #to(device) ?
+
+        next_state, reward, terminated, truncated, _= env.step(action)
+
+        
         #next_state = next_state.flatten()
 
         #if truncated: print("!!! truncated")
@@ -275,7 +348,6 @@ for episode in range(episodes):
         # action_array = np.array(action)
         # action_flattened = action_array.flatten()
 
-
         replay_buffer.push(state_flattened, action, reward, next_state_flattened, terminated)
         if len(replay_buffer) > batch_size:
             loss = soft_q_update(batch_size)
@@ -286,21 +358,19 @@ for episode in range(episodes):
         episode_reward += reward
        
         
-        if done:
-            break
-
-    
         
-    episode += 1
     
 
     rewards.append(episode_reward)
     losses.append(mean(losses_ep))
     
-    print("\rEpisode {:d}:  Total Reward = {:.2f}   Loss = {:.2f}\t\t".format(
-                            episode, episode_reward, loss), end="")     # loss is the last loss of the episode
+    print("\rEpisode {:d}:  Total Reward = {:.2f}   Loss = {:.2f}\t\t".format(episode, episode_reward, loss), end="")     # loss is the last loss of the episode
+    
+    if done:
+            break       
+    episode += 1
 
-
+print("\rTraining COMPLETED.")
 
 
 
@@ -324,7 +394,7 @@ state_array = np.array(state)
 state_flattened = state_array.flatten()
 
 for steps in range(1000):
-    action = policy_net.get_action(state_flattened)
+    action = policy_net.get_action(torch.FloatTensor(state_flattened).unsqueeze(0)) #to(device) ?
     next_state, reward, terminated, truncated, _ = env.step(action)
     done = terminated or truncated    
     
@@ -334,6 +404,7 @@ for steps in range(1000):
     next_state_flattened = next_state_array.flatten()
     
     tot_rew += reward
+    print(action)
     if done:
         break
     state_flattened = next_state_flattened
