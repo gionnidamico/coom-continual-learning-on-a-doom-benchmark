@@ -1,5 +1,7 @@
 import math
+from statistics import mean
 import random
+import pickle
 
 import gymnasium as gym
 import numpy as np
@@ -257,155 +259,164 @@ def soft_q_update(batch_size,gamma=0.99,soft_tau=1e-2,):
 
 
 
+if __name__ == "__main__":
+    # This code will only run when the script is executed directly
+ 
 
-
-# TRAINING (?)
-
-
-
-RESOLUTION = '160X120'
-RENDER = False       # If render is true, resolution is always 1920x1080 to match my screen
-env = make_env(scenario=Scenario.RUN_AND_GUN, resolution=RESOLUTION, render=RENDER)
-
-state_dim = env.observation_space.shape[0] *  env.observation_space.shape[1] *  env.observation_space.shape[2] * env.observation_space.shape[3]
-action_dim = env.action_space.n
-print(state_dim)
-print(action_dim)
+    # TRAINING (?)
 
 
 
-hidden_dim = 256
+    RESOLUTION = '160X120'
+    RENDER = False       # If render is true, resolution is always 1920x1080 to match my screen
+    env = make_env(scenario=Scenario.RUN_AND_GUN, resolution=RESOLUTION, render=RENDER)
 
-value_net = ValueNetwork(state_dim, action_dim, hidden_dim).to(device)
-target_value_net = ValueNetwork(state_dim, action_dim, hidden_dim).to(device)
-
-soft_q_net1 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
-soft_q_net2 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
-
-policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim, device).to(device)
-
-for target_param, param in zip(target_value_net.parameters(), value_net.parameters()):
-    target_param.data.copy_(param.data)
-    
-
-value_criterion  = nn.MSELoss()
-soft_q_criterion1 = nn.MSELoss()
-soft_q_criterion2 = nn.MSELoss()
-lr  = 3e-4
-
-value_optimizer  = optim.Adam(value_net.parameters(), lr=lr)
-soft_q_optimizer1 = optim.Adam(soft_q_net1.parameters(), lr=lr)
-soft_q_optimizer2 = optim.Adam(soft_q_net2.parameters(), lr=lr)
-
-policy_optimizer = optim.Adam(policy_net.parameters(), lr=lr)
-
-
-replay_buffer_size = 1000000
-replay_buffer = ReplayBuffer(replay_buffer_size)
-
-
-max_steps   = 2500       # change
-episode = 0
-episodes = 3
-rewards     = []
-losses = []
-batch_size  = 16
-#window = 50
+    state_dim = env.observation_space.shape[0] *  env.observation_space.shape[1] *  env.observation_space.shape[2] * env.observation_space.shape[3]
+    action_dim = env.action_space.n
+    print(state_dim)
+    print(action_dim)
 
 
 
-from statistics import mean
+    hidden_dim = 256
 
-print("\nTraining STARTING...")
+    value_net = ValueNetwork(state_dim, action_dim, hidden_dim).to(device)
+    target_value_net = ValueNetwork(state_dim, action_dim, hidden_dim).to(device)
 
-for episode in range(episodes):
+    soft_q_net1 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
+    soft_q_net2 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
+
+    policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim, device).to(device)
+
+    for target_param, param in zip(target_value_net.parameters(), value_net.parameters()):
+        target_param.data.copy_(param.data)
+        
+
+    value_criterion  = nn.MSELoss()
+    soft_q_criterion1 = nn.MSELoss()
+    soft_q_criterion2 = nn.MSELoss()
+    lr  = 3e-4
+
+    value_optimizer  = optim.Adam(value_net.parameters(), lr=lr)
+    soft_q_optimizer1 = optim.Adam(soft_q_net1.parameters(), lr=lr)
+    soft_q_optimizer2 = optim.Adam(soft_q_net2.parameters(), lr=lr)
+
+    policy_optimizer = optim.Adam(policy_net.parameters(), lr=lr)
+
+
+    replay_buffer_size = 1000000
+    replay_buffer = ReplayBuffer(replay_buffer_size)
+
+
+    max_steps   = 100       # change
+    episode = 0
+    episodes = 3
+    rewards     = []
+    losses = []
+    batch_size  = 16
+    #window = 50
+
+
+
+
+
+    print("\nTraining STARTING...")
+
+    for episode in range(episodes):
+        state, _ = env.reset()
+        #state = state.flatten()
+
+        state_array = np.array(state)
+        state_flattened = state_array.flatten()
+
+        episode_reward = 0
+        losses_ep = []
+        for step in range(max_steps):
+
+            if len(replay_buffer) <= batch_size:
+                action = policy_net.get_action(torch.FloatTensor(state_flattened).unsqueeze(0)) #to(device) ?
+
+            next_state, reward, done, truncated, _= env.step(action)
+
+            
+            #next_state = next_state.flatten()
+
+            # corrects 'LazyFrames object' error
+            state_array = np.array(state)
+            state_flattened = state_array.flatten()
+            next_state_array = np.array(next_state)
+            next_state_flattened = next_state_array.flatten()
+            # action_array = np.array(action)
+            # action_flattened = action_array.flatten()
+
+            replay_buffer.push(state_flattened, action, reward, next_state_flattened, done)
+            if len(replay_buffer) > batch_size:
+                loss = soft_q_update(batch_size)
+                losses_ep.append(loss)
+            
+            #print(reward)
+            state = next_state
+            episode_reward += reward
+        
+            if done or truncated:  # go to next episode
+                break        
+            
+        
+
+        rewards.append(episode_reward)
+        losses.append(mean(losses_ep))
+        
+        print("\nEpisode {:d}:  Total Reward = {:.2f}   Loss = {:.2f}".format(episode+1, episode_reward, loss), end="")     # loss is the last loss of the episode
+        
+        
+        episode += 1
+
+
+    print("\nTraining COMPLETED.")
+
+    # Save the trained model to a file
+    with open('model.pkl', 'wb') as file:
+        pickle.dump(policy_net, file)
+
+
+
+
+    # test + render
+
+    from COOM.env.builder import make_env
+    from COOM.utils.config import Scenario
+
+
+    RESOLUTION = '1920x1080'
+    RENDER = True       # If render is true, resolution is always 1920x1080 to match my screen
+
+    done = False
+    tot_rew = 0
+    env = make_env(scenario=Scenario.RUN_AND_GUN, resolution=RESOLUTION, render=RENDER)
+
+    # Initialize and use the environment
     state, _ = env.reset()
-    #state = state.flatten()
-
     state_array = np.array(state)
     state_flattened = state_array.flatten()
 
-    episode_reward = 0
-    losses_ep = []
-    for step in range(max_steps):
-
-        if len(replay_buffer) <= batch_size:
-            action = policy_net.get_action(torch.FloatTensor(state_flattened).unsqueeze(0)) #to(device) ?
-
-        next_state, reward, done, truncated, _= env.step(action)
-
+    for steps in range(1000):
+        action = policy_net.get_action(torch.FloatTensor(state_flattened).unsqueeze(0)) #to(device) ?
+        next_state, reward, terminated, truncated, _ = env.step(action)
+        done = terminated or truncated    
         
-        #next_state = next_state.flatten()
-
-        # corrects 'LazyFrames object' error
         state_array = np.array(state)
         state_flattened = state_array.flatten()
         next_state_array = np.array(next_state)
         next_state_flattened = next_state_array.flatten()
-        # action_array = np.array(action)
-        # action_flattened = action_array.flatten()
-
-        replay_buffer.push(state_flattened, action, reward, next_state_flattened, done)
-        if len(replay_buffer) > batch_size:
-            loss = soft_q_update(batch_size)
-            losses_ep.append(loss)
         
-        #print(reward)
-        state = next_state
-        episode_reward += reward
-       
-        if done or truncated:  # go to next episode
-            break        
-        
-    
-
-    rewards.append(episode_reward)
-    losses.append(mean(losses_ep))
-    
-    print("\nEpisode {:d}:  Total Reward = {:.2f}   Loss = {:.2f}".format(episode+1, episode_reward, loss), end="")     # loss is the last loss of the episode
-    
-      
-    episode += 1
+        tot_rew += reward
+        #print(action)
+        if done:
+            break
+        state_flattened = next_state_flattened
 
 
-print("\nTraining COMPLETED.")
+    print("Tot reward in episode: ", tot_rew)
 
 
 
-
-# test + render
-
-from COOM.env.builder import make_env
-from COOM.utils.config import Scenario
-
-
-RESOLUTION = '1920x1080'
-RENDER = True       # If render is true, resolution is always 1920x1080 to match my screen
-
-done = False
-tot_rew = 0
-env = make_env(scenario=Scenario.RUN_AND_GUN, resolution=RESOLUTION, render=RENDER)
-
-# Initialize and use the environment
-state, _ = env.reset()
-state_array = np.array(state)
-state_flattened = state_array.flatten()
-
-for steps in range(1000):
-    action = policy_net.get_action(torch.FloatTensor(state_flattened).unsqueeze(0)) #to(device) ?
-    next_state, reward, terminated, truncated, _ = env.step(action)
-    done = terminated or truncated    
-    
-    state_array = np.array(state)
-    state_flattened = state_array.flatten()
-    next_state_array = np.array(next_state)
-    next_state_flattened = next_state_array.flatten()
-    
-    tot_rew += reward
-    #print(action)
-    if done:
-        break
-    state_flattened = next_state_flattened
-
-
-print("Tot reward in episode: ", tot_rew)
