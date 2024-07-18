@@ -265,7 +265,7 @@ def soft_q_update(batch_size,gamma=0.99,soft_tau=1e-2,):
 
 RESOLUTION = '160X120'
 RENDER = False       # If render is true, resolution is always 1920x1080 to match my screen
-env = make_env(scenario=Scenario.FLOOR_IS_LAVA, resolution=RESOLUTION, render=RENDER)
+env = make_env(scenario=Scenario.RUN_AND_GUN, resolution=RESOLUTION, render=RENDER)
 
 state_dim = env.observation_space.shape[0] *  env.observation_space.shape[1] *  env.observation_space.shape[2] * env.observation_space.shape[3]
 action_dim = env.action_space.n
@@ -306,7 +306,7 @@ replay_buffer = ReplayBuffer(replay_buffer_size)
 
 max_steps   = 2500       # change
 episode = 0
-episodes = 5
+episodes = 3
 rewards     = []
 losses = []
 batch_size  = 16
@@ -316,7 +316,7 @@ batch_size  = 16
 
 from statistics import mean
 
-print("\rTraining STARTING...")
+print("\nTraining STARTING...")
 
 for episode in range(episodes):
     state, _ = env.reset()
@@ -332,13 +332,10 @@ for episode in range(episodes):
         if len(replay_buffer) <= batch_size:
             action = policy_net.get_action(torch.FloatTensor(state_flattened).unsqueeze(0)) #to(device) ?
 
-        next_state, reward, terminated, truncated, _= env.step(action)
+        next_state, reward, done, truncated, _= env.step(action)
 
         
         #next_state = next_state.flatten()
-
-        #if truncated: print("!!! truncated")
-        done = terminated
 
         # corrects 'LazyFrames object' error
         state_array = np.array(state)
@@ -348,7 +345,7 @@ for episode in range(episodes):
         # action_array = np.array(action)
         # action_flattened = action_array.flatten()
 
-        replay_buffer.push(state_flattened, action, reward, next_state_flattened, terminated)
+        replay_buffer.push(state_flattened, action, reward, next_state_flattened, done)
         if len(replay_buffer) > batch_size:
             loss = soft_q_update(batch_size)
             losses_ep.append(loss)
@@ -357,20 +354,21 @@ for episode in range(episodes):
         state = next_state
         episode_reward += reward
        
-        
+        if done or truncated:  # go to next episode
+            break        
         
     
 
     rewards.append(episode_reward)
     losses.append(mean(losses_ep))
     
-    print("\rEpisode {:d}:  Total Reward = {:.2f}   Loss = {:.2f}\t\t".format(episode, episode_reward, loss), end="")     # loss is the last loss of the episode
+    print("\nEpisode {:d}:  Total Reward = {:.2f}   Loss = {:.2f}".format(episode+1, episode_reward, loss), end="")     # loss is the last loss of the episode
     
-    if done:
-            break       
+      
     episode += 1
 
-print("\rTraining COMPLETED.")
+
+print("\nTraining COMPLETED.")
 
 
 
@@ -386,7 +384,7 @@ RENDER = True       # If render is true, resolution is always 1920x1080 to match
 
 done = False
 tot_rew = 0
-env = make_env(scenario=Scenario.FLOOR_IS_LAVA, resolution=RESOLUTION, render=RENDER)
+env = make_env(scenario=Scenario.RUN_AND_GUN, resolution=RESOLUTION, render=RENDER)
 
 # Initialize and use the environment
 state, _ = env.reset()
@@ -404,7 +402,7 @@ for steps in range(1000):
     next_state_flattened = next_state_array.flatten()
     
     tot_rew += reward
-    print(action)
+    #print(action)
     if done:
         break
     state_flattened = next_state_flattened
