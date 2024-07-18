@@ -118,9 +118,13 @@ class PolicyNetwork(nn.Module):
         self.output_layer_log_std = nn.Linear(hidden_size, num_actions)
 
 
-        # # weight initialization correction
-        # self.output_layer.weight.data.uniform_(-init_w, init_w)
-        # self.output_layer.bias.data.uniform_(-init_w, init_w)
+        # weight initialization correction
+        self.output_layer_mean.weight.data.uniform_(-init_w, init_w)
+        self.output_layer_mean.bias.data.uniform_(-init_w, init_w)
+        self.output_layer_log_std.weight.data.uniform_(-init_w, init_w)
+        self.output_layer_log_std.bias.data.uniform_(-init_w, init_w)
+
+
         
     def forward(self, state):
         x = F.relu(self.linear1(state))
@@ -162,41 +166,21 @@ class PolicyNetwork(nn.Module):
         return action, log_prob #,self.rescale_fn(torch.tanh(mean))
 
 
-        '''
-        state = torch.Tensor(state).to(device)  #.unsqueeze(0)
-        probs = self.forward(state)#.squeeze()           #vedere
        
-        
-        #dist = torch.distributions.Categorical(probs)
-       
-        actions = dist.sample() #(self.num_actions,)
-        z = 1e-8  if (probs == 0.0).any() else 0.0               # deals with the case when probs is 0 because log0 does not exists (shifts to a very small values instead)
-        # print(z)
-        log_prob = torch.log(probs + z)   # + z
-
-        #print(actions.shape, log_prob.shape)
-        return actions, log_prob  #.transpose(0, 1)     #action.item()
-        '''
          
     def get_action(self, state):
         state = torch.FloatTensor(state).to(device) #.unsqueeze(0)
         probs = self.forward(state)[0]  # get mean action
         highest_prob_action = torch.argmax(probs, dim=1)
         return highest_prob_action.item()
-        # state = torch.FloatTensor(state).unsqueeze(0).to(device)
-        # mean, log_std = self.forward(state)
-        # action = torch.tanh(mean)
-        # action  = action.cpu().detach().numpy()
-        # print(f'action is {action}')
-        # return action[0]
-        
+       
 
         
     
 
 
 
-#???
+
 def soft_q_update(batch_size,gamma=0.99,soft_tau=1e-2,):
     
     state, action, reward, next_state, done = replay_buffer.sample(batch_size)
