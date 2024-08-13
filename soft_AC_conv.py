@@ -60,11 +60,11 @@ class ValueNetwork(nn.Module):
         super(ValueNetwork, self).__init__()
         
         # Convolutional layers to process sequence of frames
-        self.conv1 = nn.Conv3d(in_channels=num_channels, out_channels=32, kernel_size=(num_frames, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
-        self.conv2 = nn.Conv3d(in_channels=32, out_channels=64, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
+        self.conv1 = nn.Conv3d(in_channels=num_channels, out_channels=16, kernel_size=(num_frames, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
+        self.conv2 = nn.Conv3d(in_channels=16, out_channels=32, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
         
         # Fully connected layers
-        self.flatten_dim = 64 * 84 * 84  # Adjust according to the output shape of conv layers
+        self.flatten_dim = 32 * 84 * 84  # Adjust according to the output shape of conv layers
         self.fc1 = nn.Linear(self.flatten_dim, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.output_layer = nn.Linear(hidden_size, num_actions)
@@ -76,7 +76,7 @@ class ValueNetwork(nn.Module):
     def forward(self, state):
         x = F.relu(self.conv1(state))
         x = F.relu(self.conv2(x))
-        x = x.view(x.size(0), -1)  # Flatten the tensor for fully connected layers
+        x = x.reshape(x.size(0), -1)  # Flatten the tensor for fully connected layers
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.output_layer(x)
@@ -91,11 +91,11 @@ class SoftQNetwork(nn.Module):
         super(SoftQNetwork, self).__init__()
         
         # Convolutional layers
-        self.conv1 = nn.Conv3d(in_channels=num_channels, out_channels=32, kernel_size=(num_frames, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
-        self.conv2 = nn.Conv3d(in_channels=32, out_channels=64, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
+        self.conv1 = nn.Conv3d(in_channels=num_channels, out_channels=16, kernel_size=(num_frames, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
+        self.conv2 = nn.Conv3d(in_channels=16, out_channels=32, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
         
         # Fully connected layers
-        self.flatten_dim = 64 * 84 * 84
+        self.flatten_dim = 32 * 84 * 84
         self.fc1 = nn.Linear(self.flatten_dim, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.output_layer = nn.Linear(hidden_size, num_actions)
@@ -107,7 +107,7 @@ class SoftQNetwork(nn.Module):
     def forward(self, state, action):
         x = F.relu(self.conv1(state))
         x = F.relu(self.conv2(x))
-        x = x.view(x.size(0), -1)
+        x = x.reshape(x.size(0), -1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         q_values = self.output_layer(x)
@@ -132,11 +132,11 @@ class PolicyNetwork(nn.Module):
         self.log_std_max = log_std_max
         
         # Convolutional layers
-        self.conv1 = nn.Conv3d(in_channels=num_channels, out_channels=32, kernel_size=(num_frames, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
-        self.conv2 = nn.Conv3d(in_channels=32, out_channels=64, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
+        self.conv1 = nn.Conv3d(in_channels=num_channels, out_channels=16, kernel_size=(num_frames, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
+        self.conv2 = nn.Conv3d(in_channels=16, out_channels=32, kernel_size=(1, 3, 3), stride=(1, 1, 1), padding=(0, 1, 1))
 
         # Fully connected layers
-        self.flatten_dim = 64 * 84 * 84
+        self.flatten_dim = 32 * 84 * 84
         self.fc1 = nn.Linear(self.flatten_dim, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
 
@@ -152,7 +152,9 @@ class PolicyNetwork(nn.Module):
     def forward(self, state):
         x = F.relu(self.conv1(state))
         x = F.relu(self.conv2(x))
-        x = x.view(x.size(0), -1)
+        #print("pre",x.shape)
+        x = x.reshape(x.size(0), -1)
+        #print("post",x.shape)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
 
@@ -352,6 +354,7 @@ if __name__ == "__main__":
 
         for episode in range(episodes):
             state, _ = env.reset()
+            state = state.permute(0, 1, 4, 2, 3)
             #state = state.flatten()
 
             # state_array = np.array(state)
@@ -365,7 +368,7 @@ if __name__ == "__main__":
                     action = policy_net.get_action(torch.FloatTensor(state).unsqueeze(0)) #to(device) ?
 
                 next_state, reward, done, truncated, _= env.step(action)
-
+                next_state = next_state.permute(0, 1, 4, 2, 3)
                 
                 #next_state = next_state.flatten()
 
@@ -412,6 +415,8 @@ if __name__ == "__main__":
         for env in cl_env.tasks:
             # Initialize and use the environment
             state, _ = env.reset()
+            state = torch.FloatTensor(np.array(state))
+            state = state.permute(3, 0, 1, 2)
             # state_array = np.array(state)
             # state_flattened = state_array.flatten()
 
@@ -422,6 +427,8 @@ if __name__ == "__main__":
 
             for episode in range(episodes):
                 state, _ = env.reset()
+                state = torch.FloatTensor(np.array(state))
+                state = state.permute(3, 0, 1, 2)
                 #state = state.flatten()
 
                 # state_array = np.array(state)
@@ -430,12 +437,14 @@ if __name__ == "__main__":
                 episode_reward = 0
                 losses_ep = []
                 for step in range(max_steps):
-                    print()
 
                     if len(replay_buffer) <= batch_size:
-                        action = policy_net.get_action(torch.FloatTensor(state).unsqueeze(0)) #to(device) ?
+                        action = policy_net.get_action(state.unsqueeze(0)) #to(device) ?
 
                     next_state, reward, done, truncated, _= env.step(action)
+
+                    next_state = torch.FloatTensor(np.array(next_state))
+                    next_state = next_state.permute(3, 0, 1, 2)
 
                     
                     #next_state = next_state.flatten()
