@@ -9,7 +9,7 @@ from COOM.utils.config import Scenario
 from COOM.env.continual import ContinualLearningEnv
 from COOM.utils.config import Sequence
 
-from soft_AC import PolicyNetwork
+from soft_AC_fc import PolicyNetwork
 
 RESOLUTION = '1920x1080'
 RENDER = True       # If render is true, resolution is always 1920x1080 to match my screen
@@ -55,6 +55,7 @@ elif SEQUENCE == 'CO8':
     done = False
     tot_rew = 0
     cl_env = ContinualLearningEnv(Sequence.CO8)
+    cl_env.render()
     for env in cl_env.tasks:
         # Initialize and use the environment
         state, _ = env.reset()
@@ -82,4 +83,5 @@ elif SEQUENCE == 'CO8':
 
 
 print("Total reward: ", tot_rew)
+
 
