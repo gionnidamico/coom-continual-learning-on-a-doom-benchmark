@@ -54,29 +54,21 @@ class ReplayBuffer:
 # actor network
 #######################
 class ValueNetwork(nn.Module):
-    def __init__(self, num_frames, num_channels, hidden_dim, num_actions, init_w=3e-3):
+    def __init__(self, state_dim, num_actions, hidden_dim, init_w=3e-3):    #added num_actions
         super(ValueNetwork, self).__init__()
         
-        # Convolutional layers with specified strides
-        self.conv1 = nn.Conv3d(in_channels=num_channels, out_channels=32, kernel_size=(8, 8, 3), stride=(4, 4, 1), padding=(1, 1, 0))
-        self.conv2 = nn.Conv3d(in_channels=32, out_channels=64, kernel_size=(4, 4, 2), stride=(2, 2, 1), padding=(1, 1, 0))
-
-        # Fully connected layers
-        self.flatten_dim = 64 * 10 * 10 * 1
-        self.fc1 = nn.Linear(self.flatten_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.linear1 = nn.Linear(state_dim, hidden_dim)
+        self.linear2 = nn.Linear(hidden_dim, hidden_dim)
         self.output_layer = nn.Linear(hidden_dim, num_actions)
         
-        # Weight initialization
+        # weight initialization correction
         self.output_layer.weight.data.uniform_(-init_w, init_w)
         self.output_layer.bias.data.uniform_(-init_w, init_w)
         
     def forward(self, state):
-        x = F.relu(self.conv1(state))
-        x = F.relu(self.conv2(x))
-        x = x.view(x.size(0), -1)  # Flatten the tensor for fully connected layers
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        state = state.reshape(state.size(0), -1)
+        x = F.relu(self.linear1(state))
+        x = F.relu(self.linear2(x))
         x = self.output_layer(x)
         return x
 
@@ -273,9 +265,8 @@ if __name__ == "__main__":
     action_dim = 12
 
     hidden_dim = 256
-
-    value_net = ValueNetwork(num_frames=4, num_actions=action_dim, num_channels=3, hidden_dim=hidden_dim).to(device)
-    target_value_net = ValueNetwork(num_frames=4, num_actions=action_dim, num_channels=3, hidden_dim=hidden_dim).to(device)
+    value_net = ValueNetwork(state_dim=4*84*84*3, num_actions=action_dim, hidden_dim=hidden_dim).to(device)
+    target_value_net = ValueNetwork(state_dim=4*84*84*3, num_actions=action_dim, hidden_dim=hidden_dim).to(device)
 
     soft_q_net1 = SoftQNetwork(num_frames=4, num_actions=action_dim, num_channels=3, hidden_size=hidden_dim).to(device)
     soft_q_net2 = SoftQNetwork(num_frames=4, num_actions=action_dim, num_channels=3, hidden_size=hidden_dim).to(device)
