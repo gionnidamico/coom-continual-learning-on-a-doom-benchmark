@@ -78,7 +78,7 @@ class SoftQNetwork(nn.Module):
     def __init__(self, num_inputs, num_actions, hidden_size, init_w=3e-3):
         super(SoftQNetwork, self).__init__()
         
-        self.linear1 = nn.Linear(num_inputs , hidden_size)  #+ num_actions
+        self.linear1 = nn.Linear(num_inputs + num_actions, hidden_size)  #
         self.linear2 = nn.Linear(hidden_size, hidden_size)
         self.output_layer = nn.Linear(hidden_size, num_actions)           # vedere perchè dovebbe restituire il vettore dei q values?
         
@@ -88,7 +88,7 @@ class SoftQNetwork(nn.Module):
 
         
     def forward(self, state, action):       # new_action????
-        x = F.relu(self.linear1(state))
+        x = F.relu(self.linear1(torch.cat(state, action)))
         x = F.relu(self.linear2(x))
         q_values = self.output_layer(x)
         return q_values
@@ -162,7 +162,9 @@ class PolicyNetwork(nn.Module):
         log_prob = pi_s.log_prob(pre_tanh_action) - torch.log(
         (1 - tanh_action.pow(2)).clamp(0, 1) + epsilon)
         log_prob = log_prob.sum(dim=1, keepdim=True)
-    
+
+        print(tanh_action)
+
         return action, log_prob #,self.rescale_fn(torch.tanh(mean))
 
 
@@ -181,7 +183,7 @@ class PolicyNetwork(nn.Module):
 
 
 
-def soft_q_update(batch_size,gamma=0.99,soft_tau=1e-2,):
+def soft_q_update(batch_size, replay_buffer, gamma=0.99, soft_tau=1e-2):
     
     state, action, reward, next_state, done = replay_buffer.sample(batch_size)
 
@@ -353,7 +355,7 @@ if __name__ == "__main__":
 
                 replay_buffer.push(state_flattened, action, reward, next_state_flattened, done)
                 if len(replay_buffer) > batch_size:
-                    loss = soft_q_update(batch_size)
+                    loss = soft_q_update(batch_size, replay_buffer)
                     losses_ep.append(loss)
                 
                 #print(reward)
@@ -423,7 +425,7 @@ if __name__ == "__main__":
 
                     replay_buffer.push(state_flattened, action, reward, next_state_flattened, done)
                     if len(replay_buffer) > batch_size:
-                        loss = soft_q_update(batch_size)
+                        loss = soft_q_update(batch_size, replay_buffer)
                         losses_ep.append(loss)
                     
                     #print(reward)
