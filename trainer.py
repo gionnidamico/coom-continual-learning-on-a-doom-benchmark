@@ -123,10 +123,6 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
 
 
 # Step 4: Create and Train in an Environment
-# Let's use a simple custom environment to demonstrate training.
-import gym
-import numpy as np
-
 
 num_episodes = 1
 gamma = 0.99
