@@ -23,10 +23,12 @@ print("Using device:", device)
 # SAC type
 MODEL = 'conv'
 
+SAVE_PATH = 'models/'
+
 # train config
 RESOLUTION = '160X120'
 RENDER = False       # If render is true, resolution is always 1920x1080 to match my screen
-SEQUENCE = None #Sequence.CO8             # SET TO NONE TO RUN THE SINGLE SCENARIO (set it on next line)
+SEQUENCE = 'Single' #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
 SCENARIO = Scenario.RUN_AND_GUN
 
 # the SAC Algorithm
@@ -124,13 +126,13 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
 
 # Step 4: Create and Train in an Environment
 
-num_episodes = 1
+num_episodes = 3
 gamma = 0.99
 
 print("\nTraining STARTING...")
 
 # choose between 'SINGLE' and 'SEQUENCE'
-if SEQUENCE is None:    # train on single scenario
+if SEQUENCE == 'Single':    # train on single scenario
     env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
 
 for episode in range(num_episodes):
@@ -168,3 +170,7 @@ for episode in range(num_episodes):
         episode_reward += reward.item()
 
     print(f"Episode {episode+1}, Reward: {episode_reward}")
+
+    # Save the trained model in a file
+    with open(f'{SAVE_PATH}model_{MODEL}.pkl', 'wb') as file:
+        pickle.dump(policy_net, file)

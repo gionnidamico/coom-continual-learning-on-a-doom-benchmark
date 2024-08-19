@@ -9,46 +9,50 @@ from COOM.utils.config import Scenario
 from COOM.env.continual import ContinualLearningEnv
 from COOM.utils.config import Sequence
 
-from soft_AC_conv_vnlin import PolicyNetwork # for pickle load
+from SAC.sac_conv import PolicyNetwork # for pickle load
 
+# Test mode
 RESOLUTION = '1920x1080'
 RENDER = True       # If render is true, resolution is always 1920x1080 to match my screen
 SEQUENCE =  'Single'        #'Single', 'CO8' : define on which sequence you would like to test 
+SCENARIO = Scenario.RUN_AND_GUN
 
+# SAC type
+MODEL = 'conv'
 
-with open('model_conv.pkl', 'rb') as file:
+SAVE_PATH = 'models/'
+
+with open(f'{SAVE_PATH}model_{MODEL}.pkl', 'rb') as file:
     model = pickle.load(file)
 
 
 
-if SEQUENCE == 'Single':
-    done = False
-    tot_rew = 0
-    env = make_env(scenario=Scenario.FLOOR_IS_LAVA, resolution=RESOLUTION, render=RENDER)
+
+if SEQUENCE == 'Single':    # train on single scenario
+    env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
 
 
-
-    # Initialize and use the environment
     state, _ = env.reset()
-    state = torch.FloatTensor(np.array(state))
-    state = state.permute(3, 1, 2, 0)
+    #state = np.array(state)
+    episode_reward = 0
+    done = False
+    while not done:
+        state = torch.FloatTensor(np.array(state))#.unsqueeze(0)   # [1, 4, 84, 84, 3]
+        action = model.sample_action(state, batched=False)
+        next_state, reward, done, truncated, _ = env.step(action)
+        next_state = torch.FloatTensor(np.array(next_state))#.unsqueeze(0)
+        reward = torch.FloatTensor([reward])#.unsqueeze(1)
+        done = torch.FloatTensor([done])#.unsqueeze(1)
+        action = torch.LongTensor([action])#.unsqueeze(0)
 
-    for steps in range(1000):
-        action = model.get_action(torch.FloatTensor(state).unsqueeze(0)) #to(device) ?
-        print(action)
-        next_state, reward, terminated, truncated, _ = env.step(action)
-        done = terminated or truncated    
-        
-        next_state = torch.FloatTensor(np.array(next_state))
-        next_state = next_state.permute(3, 1, 2, 0)
-        
-        tot_rew += reward
-        #print(action)
-        if done:
-            break
+        print(action.item())
+
         state = next_state
+        episode_reward += reward.item()
 
+    print(f"{SCENARIO} - Reward: {episode_reward}")
 
+'''
 elif SEQUENCE == 'CO8':
 
     done = False
@@ -77,10 +81,10 @@ elif SEQUENCE == 'CO8':
                 break
             state_flattened = next_state_flattened
 
-
-
-
-
 print("Total reward: ", tot_rew)
+'''
+
+
+
 
 
