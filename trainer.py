@@ -28,8 +28,12 @@ SAVE_PATH = 'models/'
 # train config
 RESOLUTION = '160X120'
 RENDER = False       # If render is true, resolution is always 1920x1080 to match my screen
-SEQUENCE = 'Single' #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
+SEQUENCE = Sequence.CO8 #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
 SCENARIO = Scenario.RUN_AND_GUN
+
+# train params
+num_episodes = 1
+gamma = 0.99
 
 # the SAC Algorithm
 
@@ -124,40 +128,25 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
 
 
 
-# Step 4: Create and Train in an Environment
+# Create and Train in an Environment
 
-num_episodes = 3
-gamma = 0.99
-
-print("\nTraining STARTING...")
-
-# choose between 'SINGLE' and 'SEQUENCE'
-if SEQUENCE == 'Single':    # train on single scenario
-    env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
-
-for episode in range(num_episodes):
+# Train on a scenario until the end
+def train_on_scenario(env):
     state, _ = env.reset()
-    #state = np.array(state)
-    i=0
     episode_reward = 0
     done = False
+
     while not done:
-        # i+=1
-        # print(i)
-        state = torch.FloatTensor(np.array(state))#.unsqueeze(0)   # [1, 4, 84, 84, 3]
+        state = torch.FloatTensor(np.array(state))   # [1, 4, 84, 84, 3]
         action = policy_net.sample_action(state, batched=False)
         next_state, reward, done, truncated, _ = env.step(action)
-        next_state = torch.FloatTensor(np.array(next_state))#.unsqueeze(0)
-        reward = torch.FloatTensor([reward])#.unsqueeze(1)
-        done = torch.FloatTensor([done])#.unsqueeze(1)
-        action = torch.LongTensor([action])#.unsqueeze(0)
+        next_state = torch.FloatTensor(np.array(next_state))
+        reward = torch.FloatTensor([reward])
+        done = torch.FloatTensor([done])
+        action = torch.LongTensor([action])
 
         #print(state.shape, action.shape, reward.shape, next_state.shape, done.shape)
-         # Within your training loop, after taking a step in the environment, add this line:
         replay_buffer.push(state, action, reward, next_state, done)
-
-        # Existing code for taking a step
-        # update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
 
         # Replace the above line with logic that checks if enough samples are in the buffer before updating
         if len(replay_buffer) > batch_size:
@@ -169,8 +158,37 @@ for episode in range(num_episodes):
         state = next_state
         episode_reward += reward.item()
 
-    print(f"Episode {episode+1}, Reward: {episode_reward}")
 
-    # Save the trained model in a file
-    with open(f'{SAVE_PATH}model_{MODEL}.pkl', 'wb') as file:
-        pickle.dump(policy_net, file)
+    return episode_reward
+
+
+
+###############################################################################
+print("\nTraining STARTING...")
+
+
+# choose between 'SINGLE' and 'SEQUENCE'
+
+if SEQUENCE == 'Single':    # train on single scenario
+    env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
+    for episode in range(num_episodes):
+        episode_reward = train_on_scenario(env)
+        print(f"Episode {episode+1}, Reward: {episode_reward}")
+
+
+else:
+    done = False
+    tot_reward = 0
+    cl_env = ContinualLearningEnv(SEQUENCE)
+    for episode in range(num_episodes):
+        for env in cl_env.tasks:
+            episode_reward = train_on_scenario(env)
+            tot_reward += episode_reward
+        print(f"Episode {episode+1}, Reward: {episode_reward}")
+
+
+
+
+# Save the trained model in a file
+with open(f'{SAVE_PATH}model_{MODEL}.pkl', 'wb') as file:
+    pickle.dump(policy_net, file)
