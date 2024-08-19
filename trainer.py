@@ -2,298 +2,173 @@ from statistics import mean
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 
 import numpy as np
 
-from replay_buffer import ReplayBuffer
+from ReplayBuffers.replay_buffer import ReplayBuffer
 
 from COOM.env.builder import make_env
 from COOM.utils.config import Scenario
 
 from COOM.env.continual import ContinualLearningEnv
 from COOM.utils.config import Sequence
+
 import pickle
 
 # use gpu
-use_cuda = torch.cuda.is_available()
-device   = torch.device("cuda" if use_cuda else "cpu")
+device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
+
+# SAC type
+MODEL = 'conv'
 
 # train config
 RESOLUTION = '160X120'
 RENDER = False       # If render is true, resolution is always 1920x1080 to match my screen
-SEQUENCE = Sequence.CO8             # SET TO NONE TO RUN THE SINGLE SCENARIO (set it on next line)
+SEQUENCE = None #Sequence.CO8             # SET TO NONE TO RUN THE SINGLE SCENARIO (set it on next line)
 SCENARIO = Scenario.RUN_AND_GUN
 
-class trainer_sac():
-    def __init__(self, mode = 'fc', regularization = 'none'):
-        super()
-        if mode == 'fc':
-            from SAC.soft_AC_fc import ValueNetwork, SoftQNetwork, PolicyNetwork
-        elif mode == 'conv':
-            from SAC.soft_AC_conv import ValueNetwork, SoftQNetwork, PolicyNetwork
-        elif mode == 'conv_vnlin':
-            from SAC.soft_AC_conv_vnlin import ValueNetwork, SoftQNetwork, PolicyNetwork
-        # NEURAL NETWORKS INIT + ALL
-            
-        # STATE AND ACTION DEFINITION (hard-coded, always the same between scenarios)
-        state_dim = 84672
-        action_dim = 12
+# the SAC Algorithm
 
-        hidden_dim = 256
+# Initialize Networks and Optimizers
+hidden_dim = 256
+batch_size = 32
 
-        self.value_net = ValueNetwork(state_dim, action_dim, hidden_dim).to(device)
-        self.target_value_net = ValueNetwork(state_dim, action_dim, hidden_dim).to(device)
+replay_buffer = ReplayBuffer(capacity=1000000)
 
-        self.soft_q_net1 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
-        self.soft_q_net2 = SoftQNetwork(state_dim, action_dim, hidden_dim).to(device)
+if MODEL == 'fc':
+    from SAC.sac_fc import ValueNetwork, QNetwork, PolicyNetwork
+    state_dim = 4*84*84*3  # Example state dimension
+    num_actions = 12  # Example number of actions
+elif MODEL == 'conv':
+    from SAC.sac_conv import ValueNetwork, QNetwork, PolicyNetwork
+    num_channels = 3
+    state_dim = num_channels  # Example state dimension
+    num_actions = 12  # Example number of actions
 
-        self.policy_net = PolicyNetwork(state_dim, action_dim, hidden_dim, device).to(device)
+value_net = ValueNetwork(state_dim, hidden_dim)
+q_net1 = QNetwork(state_dim, num_actions, hidden_dim)
+q_net2 = QNetwork(state_dim, num_actions, hidden_dim)
+policy_net = PolicyNetwork(state_dim, num_actions, hidden_dim)
 
-        self.mode = mode
-        for target_param, param in zip(self.target_value_net.parameters(), self.value_net.parameters()):
-            target_param.data.copy_(param.data)
-            
-
-        self.value_criterion  = nn.MSELoss()
-        self.soft_q_criterion1 = nn.MSELoss()
-        self.soft_q_criterion2 = nn.MSELoss()
-        lr  = 3e-4
-
-        self.value_optimizer  = optim.Adam(self.value_net.parameters(), lr=lr)
-        self.soft_q_optimizer1 = optim.Adam(self.soft_q_net1.parameters(), lr=lr)
-        self.soft_q_optimizer2 = optim.Adam(self.soft_q_net2.parameters(), lr=lr)
-
-        self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=lr)
+value_optimizer = optim.Adam(value_net.parameters(), lr=3e-4)
+q_optimizer1 = optim.Adam(q_net1.parameters(), lr=3e-4)
+q_optimizer2 = optim.Adam(q_net2.parameters(), lr=3e-4)
+policy_optimizer = optim.Adam(policy_net.parameters(), lr=3e-4)
 
 
-        replay_buffer_size = 1000000
-        self.replay_buffer = ReplayBuffer(replay_buffer_size)
-        self.regularization = regularization
+# Define the Loss Functions
+def value_loss(state, q_net1, q_net2, value_net):
+    with torch.no_grad():
+        q1 = q_net1(state)
+        q2 = q_net2(state)
+        q_min = torch.min(q1, q2)
+        next_value = q_min - torch.logsumexp(q_min, dim=-1, keepdim=True)
+    value = value_net(state)
+    # Reduce next_value to match value's shape
+    next_value = next_value.mean(dim=-1, keepdim=True)
+    #print(f"values:{value.shape}, {next_value.shape}")
+    return F.mse_loss(value, next_value)
 
-    def soft_q_update(self, batch_size, replay_buffer, gamma=0.99, soft_tau=1e-2):
-        
-        state, action, reward, next_state, done = replay_buffer.sample(batch_size)
+def q_loss(state, action, reward, next_state, done, q_net, target_value_net):
+    with torch.no_grad():
+        next_value = target_value_net(next_state)
+        target_q = reward + (1 - done) * next_value
+    q_values = q_net(state)
+    q_value = q_values.gather(1, action)   # get the Nth q_value that corresponds to the action taken (second dimension of action tensor)
+    #print(f"q_values shape: {q_value.shape}, {target_q.shape}")
+    return F.mse_loss(q_value, target_q)   
 
-        state      = torch.FloatTensor(state).to(device)
-        next_state = torch.FloatTensor(next_state).to(device)
-        action     = torch.FloatTensor(action).to(device)
-        reward     = torch.FloatTensor(reward).unsqueeze(1).to(device)
-        done       = torch.FloatTensor(np.float32(done)).unsqueeze(1).to(device)
-
-        #print(state.shape)
-
-        # current qsa_a and qsa_b
-        predicted_q_value1 = self.soft_q_net1(state, action)     # action not used
-        predicted_q_value2 = self.soft_q_net2(state, action)
-        predicted_value    = self.value_net(state)
-        current_actions, logpi_s = self.policy_net.evaluate(state)   #, epsilon, mean, log_std
-        target_alpha = (logpi_s + self.policy_net.target_entropy).detach()
-        alpha_loss = -(self.policy_net.logalpha * target_alpha).mean()
-
-        # loss of alpha, and here we step alpha’s optimizer.
-        self.policy_net.alpha_optimizer.zero_grad()
-        alpha_loss.backward()
-        self.policy_net.alpha_optimizer.step()
-
-        alpha = self.policy_net.logalpha.exp()
-
-        # Training Q Function
-        target_value = self.target_value_net(next_state)
-        target_q_value = reward + (1 - done) * gamma * target_value
-        q_value_loss1 = self.soft_q_criterion1(predicted_q_value1, target_q_value.detach())   
-        q_value_loss2 = self.soft_q_criterion2(predicted_q_value2, target_q_value.detach())
-        #print("Q Loss")
-        #print(q_value_loss1)
-        self.soft_q_optimizer1.zero_grad()
-        q_value_loss1.backward()
-        self.soft_q_optimizer1.step()
-        self.soft_q_optimizer2.zero_grad()
-        q_value_loss2.backward()
-        self.soft_q_optimizer2.step()    
-        
-        # Training Value Function
-        predicted_new_q_value = torch.min(self.soft_q_net1(state, current_actions), self.soft_q_net2(state, current_actions))
-        #print(predicted_new_q_value.shape, log_prob.shape)
-        target_value_func = predicted_new_q_value - alpha*logpi_s
-
-        value_loss = self.value_criterion(predicted_value, target_value_func.detach())
-        #print("V Loss")
-        #print(value_loss)
-        self.value_optimizer.zero_grad()
-        value_loss.backward()
-        self.value_optimizer.step()
-        
-        # Training Policy Function
-        policy_loss = (alpha*logpi_s - predicted_new_q_value).mean()
-
-        self.policy_optimizer.zero_grad()
-        policy_loss.backward()
-        self.policy_optimizer.step()
-        
-        # Update the target Value function parameters
-        for target_param, param in zip(self.target_value_net.parameters(), self.value_net.parameters()):
-            target_param.data.copy_(
-                target_param.data * (1.0 - soft_tau) + param.data * soft_tau
-            )
-
-        return q_value_loss1.item() + value_loss.item() + policy_loss.item()
+def policy_loss(state, q_net, policy_net):
+    probs = policy_net(state)
+    q_values = q_net(state)
+    log_probs = torch.log(probs + 1e-8)
+    policy_loss = (probs * (log_probs - q_values.detach())).sum(dim=-1).mean()
+    return policy_loss
 
 
-    def train(self):
-
-        max_steps   = 10000       # change
-        episode = 0
-        episodes = 3
-        rewards     = []
-        losses = []
-        batch_size  = 16
-        #window = 50
-
-
+# Training Step
+def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer):
     
+    # Flatten the state to fit in fully connected network
+    #state_array = np.array(state)
+    # state_flattened = state.flatten()  # [batch_size, 4*84*84*3]
+    # print(f'Tensor here is {state_flattened.shape}')
 
-        # choose between 'SINGLE' and 'SEQUENCE'
-        if SEQUENCE is None:    # train on single scenario
-            env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
+    # Update Value Network
+    value_optimizer.zero_grad()
+    v_loss = value_loss(state, q_net1, q_net2, value_net)
+    v_loss.backward()
+    value_optimizer.step()
 
-            print("\nTraining STARTING...")
+    # Update Q Networks
+    q_optimizer1.zero_grad()
+    q_optimizer2.zero_grad()
+    q_loss1 = q_loss(state, action, reward, next_state, done, q_net1, value_net)
+    q_loss2 = q_loss(state, action, reward, next_state, done, q_net2, value_net)
+    q_loss1.backward()
+    q_loss2.backward()
+    q_optimizer1.step()
+    q_optimizer2.step()
 
-            for episode in range(episodes):
-                state, _ = env.reset()
-                if self.mode == 'fc':
-                    state_array = np.array(state)
-                    state_flattened = state_array.flatten()
-                else:
-                    state = state.permute(0, 1, 4, 2, 3)
-
-                episode_reward = 0
-                losses_ep = []
-                for step in range(max_steps):
-
-                    if len(self.replay_buffer) <= batch_size:
-                        action = self.policy_net.get_action(torch.FloatTensor(state_flattened).unsqueeze(0)) #to(device) ?
-
-                    next_state, reward, done, truncated, _= env.step(action)
-
-                    if self.mode == 'fc':
-                        # corrects 'LazyFrames object' error
-                        state_array = np.array(state)
-                        state_flattened = state_array.flatten()
-                        next_state_array = np.array(next_state)
-                        next_state_flattened = next_state_array.flatten()
-                        # action_array = np.array(action)
-                        # action_flattened = action_array.flatten()
-                    else:
-                        next_state = torch.FloatTensor(np.array(next_state))
-                        next_state = next_state.permute(3, 0, 1, 2)
-
-                    self.replay_buffer.push(state_flattened, action, reward, next_state_flattened, done)
-                    if len(self.replay_buffer) > batch_size:
-                        loss = self.soft_q_update(batch_size, self.replay_buffer)
-                        losses_ep.append(loss)
-                    
-                    #print(reward)
-                    state = next_state
-                    episode_reward += reward
-                
-                    if done or truncated:  # go to next episode
-                        break        
-                    
-                
-
-                rewards.append(episode_reward)
-                losses.append(mean(losses_ep))
-                
-                print("\nEpisode {:d}:  Total Reward = {:.2f}   Loss = {:.2f}".format(episode+1, episode_reward, loss), end="")     # loss is the last loss of the episode
-                
-                
-                episode += 1
-
-
-            print("\nTraining COMPLETED.")
+    # Update Policy Network
+    policy_optimizer.zero_grad()
+    p_loss = policy_loss(state, q_net1, policy_net)
+    p_loss.backward()
+    policy_optimizer.step()
 
 
 
-        else: # train on a sequence
-
-            done = False
-            tot_rew = 0
-            cl_env = ContinualLearningEnv(SEQUENCE)
-            for env in cl_env.tasks:
-                # Initialize and use the environment
-                state, _ = env.reset()
-                if self.mode == 'fc':
-                    state_array = np.array(state)
-                    state_flattened = state_array.flatten()
-                else:
-                    state = state.permute(0, 1, 4, 2, 3)
-
-                
 
 
-                print("\nTraining STARTING...")
-
-                for episode in range(episodes):
-                    state, _ = env.reset()
-                    #state = state.flatten()
-
-                    state_array = np.array(state)
-                    state_flattened = state_array.flatten()
-
-                    episode_reward = 0
-                    losses_ep = []
-                    for step in range(max_steps):
-
-                        if len(self.replay_buffer) <= batch_size:
-                            action = self.policy_net.get_action(torch.FloatTensor(state_flattened).unsqueeze(0)) #to(device) ?
-
-                        next_state, reward, done, truncated, _= env.step(action)
-
-                        if self.mode == 'fc':
-                            # corrects 'LazyFrames object' error
-                            state_array = np.array(state)
-                            state_flattened = state_array.flatten()
-                            next_state_array = np.array(next_state)
-                            next_state_flattened = next_state_array.flatten()
-                            # action_array = np.array(action)
-                            # action_flattened = action_array.flatten()
-                        else:
-                            next_state = torch.FloatTensor(np.array(next_state))
-                            next_state = next_state.permute(3, 0, 1, 2)
-
-                        self.replay_buffer.push(state_flattened, action, reward, next_state_flattened, done)
-                        if len(self.replay_buffer) > batch_size:
-                            loss = self.soft_q_update(batch_size, self.replay_buffer)
-                            losses_ep.append(loss)
-                        
-                        #print(reward)
-                        state = next_state
-                        episode_reward += reward
-                    
-                        if done or truncated:  # go to next episode
-                            break        
-                        
-                    
-
-                    rewards.append(episode_reward)
-                    losses.append(mean(losses_ep))
-                    
-                    print("\nEpisode {:d}:  Total Reward = {:.2f}   Loss = {:.2f}".format(episode+1, episode_reward, loss), end="")     # loss is the last loss of the episode
-                    
-                    
-                    episode += 1
+# Step 4: Create and Train in an Environment
+# Let's use a simple custom environment to demonstrate training.
+import gym
+import numpy as np
 
 
-                print("\nTraining COMPLETED.")
+num_episodes = 1
+gamma = 0.99
 
+print("\nTraining STARTING...")
 
+# choose between 'SINGLE' and 'SEQUENCE'
+if SEQUENCE is None:    # train on single scenario
+    env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
 
-        # Save the trained model to a file
-        with open('model.pkl', 'wb') as file:
-            pickle.dump(self.policy_net, file)
+for episode in range(num_episodes):
+    state, _ = env.reset()
+    #state = np.array(state)
+    i=0
+    episode_reward = 0
+    done = False
+    while not done:
+        # i+=1
+        # print(i)
+        state = torch.FloatTensor(np.array(state))#.unsqueeze(0)   # [1, 4, 84, 84, 3]
+        action = policy_net.sample_action(state, batched=False)
+        next_state, reward, done, truncated, _ = env.step(action)
+        next_state = torch.FloatTensor(np.array(next_state))#.unsqueeze(0)
+        reward = torch.FloatTensor([reward])#.unsqueeze(1)
+        done = torch.FloatTensor([done])#.unsqueeze(1)
+        action = torch.LongTensor([action])#.unsqueeze(0)
 
+        #print(state.shape, action.shape, reward.shape, next_state.shape, done.shape)
+         # Within your training loop, after taking a step in the environment, add this line:
+        replay_buffer.push(state, action, reward, next_state, done)
 
-if __name__ == "__main__":
-    trainer = trainer_sac()
-    trainer.train()
+        # Existing code for taking a step
+        # update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
+
+        # Replace the above line with logic that checks if enough samples are in the buffer before updating
+        if len(replay_buffer) > batch_size:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch = replay_buffer.sample(batch_size)    ### single batch
+            #print(state_batch, action_batch, reward_batch, next_state_batch, done_batch)
+            update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
+            #update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
+
+        state = next_state
+        episode_reward += reward.item()
+
+    print(f"Episode {episode+1}, Reward: {episode_reward}")

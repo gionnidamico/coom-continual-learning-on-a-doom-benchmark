@@ -3,3 +3,4 @@ _vizdoom.ini
 model_test.pkl
 model_conv.pkl
 model.pkl
+__pycache__
