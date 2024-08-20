@@ -7,6 +7,7 @@ import torch.nn.functional as F
 import numpy as np
 
 from ReplayBuffers.replay_buffer import ReplayBuffer
+from Regularizators.ewc import ewc
 
 from COOM.env.builder import make_env
 from COOM.utils.config import Scenario
@@ -21,7 +22,7 @@ device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 # SAC type
-MODEL = 'fc'
+MODEL = 'conv'
 
 SAVE_PATH = 'models/'
 
@@ -31,8 +32,10 @@ RENDER = False       # If render is true, resolution is always 1920x1080 to matc
 SEQUENCE = Sequence.CO8 #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
 SCENARIO = Scenario.RUN_AND_GUN
 
+REGULARIZATION = 'ewc'
+
 # train params
-num_episodes = 1
+num_episodes = 2
 gamma = 0.99
 
 # the SAC Algorithm
@@ -77,21 +80,40 @@ def value_loss(state, q_net1, q_net2, value_net):
     #print(f"values:{value.shape}, {next_value.shape}")
     return F.mse_loss(value, next_value)
 
-def q_loss(state, action, reward, next_state, done, q_net, target_value_net):
+def q_loss(state, action, reward, next_state, done, q_net, target_value_net, reg):
     with torch.no_grad():
         next_value = target_value_net(next_state)
         target_q = reward + (1 - done) * next_value
     q_values = q_net(state)
     q_value = q_values.gather(1, action)   # get the Nth q_value that corresponds to the action taken (second dimension of action tensor)
     #print(f"q_values shape: {q_value.shape}, {target_q.shape}")
-    return F.mse_loss(q_value, target_q)   
 
-def policy_loss(state, q_net, policy_net):
+    reg_weights = 0 #if no reg then no weight
+    if reg:
+        reg_weights = reg.get_weight_q(q_value, q_net)
+    '''
+    print("q")
+    print("loss:",F.mse_loss(q_value, target_q))
+    print("reg:",reg_weights)
+    '''
+    return F.mse_loss(q_value, target_q) + reg_weights
+
+def policy_loss(state, q_net, policy_net, reg):
+    state = state.detach().requires_grad_()
     probs = policy_net(state)
     q_values = q_net(state)
     log_probs = torch.log(probs + 1e-8)
     policy_loss = (probs * (log_probs - q_values.detach())).sum(dim=-1).mean()
-    return policy_loss
+
+    reg_weights = 0 #if no reg then no weight
+    if reg:
+        reg_weights = reg.get_weight_policy(probs, policy_net)
+    '''
+    print("policy")
+    print("loss:",policy_loss)
+    print("reg:",reg_weights)
+    '''
+    return policy_loss + reg_weights
 
 
 # Training Step
@@ -103,6 +125,11 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
     # print(f'Tensor here is {state_flattened.shape}')
 
     # Update Value Network
+    reg = None
+    if REGULARIZATION == 'ewc' :
+        reg = ewc()
+    
+
     value_optimizer.zero_grad()
     v_loss = value_loss(state, q_net1, q_net2, value_net)
     v_loss.backward()
@@ -111,8 +138,8 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
     # Update Q Networks
     q_optimizer1.zero_grad()
     q_optimizer2.zero_grad()
-    q_loss1 = q_loss(state, action, reward, next_state, done, q_net1, value_net)
-    q_loss2 = q_loss(state, action, reward, next_state, done, q_net2, value_net)
+    q_loss1 = q_loss(state, action, reward, next_state, done, q_net1, value_net, reg)
+    q_loss2 = q_loss(state, action, reward, next_state, done, q_net2, value_net, reg)
     q_loss1.backward()
     q_loss2.backward()
     q_optimizer1.step()
@@ -120,7 +147,7 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
 
     # Update Policy Network
     policy_optimizer.zero_grad()
-    p_loss = policy_loss(state, q_net1, policy_net)
+    p_loss = policy_loss(state, q_net1, policy_net, reg)
     p_loss.backward()
     policy_optimizer.step()
 

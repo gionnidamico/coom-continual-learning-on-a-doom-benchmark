@@ -15,7 +15,7 @@ from SAC.sac_conv import PolicyNetwork # for pickle load
 RESOLUTION = '1920x1080'
 RENDER = True       # If render is true, resolution is always 1920x1080 to match my screen
 SEQUENCE =  'Single'        #'Single', 'CO8' : define on which sequence you would like to test 
-SCENARIO = Scenario.RUN_AND_GUN
+SCENARIO = Scenario.FLOOR_IS_LAVA
 
 # SAC type
 MODEL = 'conv'
@@ -25,7 +25,9 @@ SAVE_PATH = 'models/'
 with open(f'{SAVE_PATH}model_{MODEL}.pkl', 'rb') as file:
     model = pickle.load(file)
 
-
+# use gpu
+device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device:", device)
 
 
 if SEQUENCE == 'Single':    # train on single scenario
@@ -37,13 +39,18 @@ if SEQUENCE == 'Single':    # train on single scenario
     episode_reward = 0
     done = False
     while not done:
-        state = torch.FloatTensor(np.array(state))#.unsqueeze(0)   # [1, 4, 84, 84, 3]
+        if not torch.is_tensor(state):
+            state = torch.FloatTensor(np.array(state)).to(device)   # [1, 4, 84, 84, 3]
         action = model.sample_action(state, batched=False)
         next_state, reward, done, truncated, _ = env.step(action)
-        next_state = torch.FloatTensor(np.array(next_state))#.unsqueeze(0)
-        reward = torch.FloatTensor([reward])#.unsqueeze(1)
-        done = torch.FloatTensor([done])#.unsqueeze(1)
-        action = torch.LongTensor([action])#.unsqueeze(0)
+        next_state = torch.FloatTensor(np.array(next_state)).to(device)#.unsqueeze(0)
+        reward = torch.FloatTensor([reward]).to(device)#.unsqueeze(1)
+        done = torch.FloatTensor([done]).to(device)#.unsqueeze(1)
+        action = torch.LongTensor([action]).to(device)#.unsqueeze(0)
+
+        if MODEL == 'fc':
+            state = state.view(-1)
+            next_state = next_state.view(-1)
 
         print(action.item())
 

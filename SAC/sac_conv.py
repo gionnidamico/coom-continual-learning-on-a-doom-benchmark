@@ -82,16 +82,6 @@ class PolicyNetwork(nn.Module):
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.out = nn.Linear(hidden_dim, num_actions)
 
-        # Output layer to get the action probabilities
-        self.output_layer_mean = nn.Linear(hidden_dim, num_actions)
-        self.output_layer_log_std = nn.Linear(hidden_dim, num_actions)
-
-        # (optional) Weight initialization
-        self.output_layer_mean.weight.data.uniform_(-init_w, init_w)
-        self.output_layer_mean.bias.data.uniform_(-init_w, init_w)
-        self.output_layer_log_std.weight.data.uniform_(-init_w, init_w)
-        self.output_layer_log_std.bias.data.uniform_(-init_w, init_w)
-
     def forward(self, state, batched=True):
         # if batched:
         #     state_flattened = state.view(state.size(0), -1)  # [batch_size, 4*84*843]
