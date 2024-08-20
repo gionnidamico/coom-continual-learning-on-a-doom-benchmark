@@ -21,7 +21,7 @@ device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 # SAC type
-MODEL = 'conv'
+MODEL = 'fc'
 
 SAVE_PATH = 'models/'
 
@@ -53,10 +53,10 @@ elif MODEL == 'conv':
     state_dim = num_channels  # Example state dimension
     num_actions = 12  # Example number of actions
 
-value_net = ValueNetwork(state_dim, hidden_dim)
-q_net1 = QNetwork(state_dim, num_actions, hidden_dim)
-q_net2 = QNetwork(state_dim, num_actions, hidden_dim)
-policy_net = PolicyNetwork(state_dim, num_actions, hidden_dim)
+value_net = ValueNetwork(state_dim, hidden_dim).to(device)
+q_net1 = QNetwork(state_dim, num_actions, hidden_dim).to(device)
+q_net2 = QNetwork(state_dim, num_actions, hidden_dim).to(device)
+policy_net = PolicyNetwork(state_dim, num_actions, hidden_dim).to(device)
 
 value_optimizer = optim.Adam(value_net.parameters(), lr=3e-4)
 q_optimizer1 = optim.Adam(q_net1.parameters(), lr=3e-4)
@@ -137,13 +137,18 @@ def train_on_scenario(env):
     done = False
 
     while not done:
-        state = torch.FloatTensor(np.array(state))   # [1, 4, 84, 84, 3]
+        if not torch.is_tensor(state):
+            state = torch.FloatTensor(np.array(state)).to(device)   # [1, 4, 84, 84, 3]
         action = policy_net.sample_action(state, batched=False)
         next_state, reward, done, truncated, _ = env.step(action)
-        next_state = torch.FloatTensor(np.array(next_state))
-        reward = torch.FloatTensor([reward])
-        done = torch.FloatTensor([done])
-        action = torch.LongTensor([action])
+        next_state = torch.FloatTensor(np.array(next_state)).to(device)
+        reward = torch.FloatTensor([reward]).to(device)
+        done = torch.FloatTensor([done]).to(device)
+        action = torch.LongTensor([action]).to(device)
+
+        if MODEL == 'fc':
+            state = state.view(-1)
+            next_state = next_state.view(-1)
 
         #print(state.shape, action.shape, reward.shape, next_state.shape, done.shape)
         replay_buffer.push(state, action, reward, next_state, done)

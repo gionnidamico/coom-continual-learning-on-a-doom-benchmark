@@ -14,7 +14,8 @@ class ValueNetwork(nn.Module):
         self.out = nn.Linear(hidden_dim, 1)
 
     def forward(self, state):
-        state_flattened = state.view(state.size(0), -1)  # [batch_size, 4*84*84*3]
+        #state_flattened = state.view(state.size(0), -1)  # [batch_size, 4*84*84*3]
+        state_flattened = state
         x = F.relu(self.fc1(state_flattened))
         x = F.relu(self.fc2(x))
         value = self.out(x)
@@ -29,7 +30,8 @@ class QNetwork(nn.Module):
         self.out = nn.Linear(hidden_dim, num_actions)
 
     def forward(self, state):
-        state_flattened = state.view(state.size(0), -1)  # [batch_size, 4*84*84*3]
+        #state_flattened = state.view(state.size(0), -1)  # [batch_size, 4*84*84*3]
+        state_flattened = state
         x = F.relu(self.fc1(state_flattened))
         x = F.relu(self.fc2(x))
         q_values = self.out(x)
@@ -45,7 +47,8 @@ class PolicyNetwork(nn.Module):
 
     def forward(self, state, batched=True):
         if batched:
-            state_flattened = state.view(state.size(0), -1)  # [batch_size, 4*84*843]
+            #state_flattened = state.view(state.size(0), -1)  # [batch_size, 4*84*843]
+            state_flattened = state
         else:
             state_flattened = state
 

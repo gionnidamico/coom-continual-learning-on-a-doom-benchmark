@@ -4,3 +4,4 @@ model_test.pkl
 model_conv.pkl
 model.pkl
 __pycache__
+models/model_fc.pkl
