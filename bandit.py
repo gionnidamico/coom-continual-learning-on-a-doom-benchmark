@@ -1,12 +1,6 @@
 from typing import List
 
 import numpy as np
-import torch
-import time
-
-from CL.methods.ewc import EWC_SAC
-from CL.utils.running import create_one_hot_vec
-
 
 class ExpWeights(object):
 
@@ -63,16 +57,13 @@ class ExpWeights(object):
                 self.l[i] += self.lr * (feedback[i] / max(np.exp(self.l[i]), 0.0001))
 
 
-class bandit():
+class Bandit():
 
-    def __init__(self, num_actions, num_tasks, episode_max_steps):
+    def __init__(self, num_actions, num_tasks, episode_max_steps, num_episodes: int):
         super()
         self.num_actions = num_actions
         self.num_tasks = num_tasks
         self.episode_max_steps = episode_max_steps
-
-    def test_agent(self, deterministic: bool, num_episodes: int):
-        mode = "deterministic" if deterministic else "stochastic"
 
          # Bandit params
         lr = 0.90
@@ -85,4 +76,18 @@ class bandit():
         # TB - Bandit init
         bandit_probs, bandit_p = np.empty((self.num_tasks, self.num_tasks, num_episodes)), np.empty(
             (self.num_tasks, self.num_tasks, num_episodes, self.episode_max_steps + 1))
-            bandit_probs[:], bandit_p[:] = np.nan, np.nan
+        bandit_probs[:], self.bandit_p[:] = np.nan, np.nan
+        self.bandit = ExpWeights(arms=list(range(num_tasks)), lr=lr, decay=decay, greedy=greedy_bandit, epsilon=epsilon)
+
+    def get_head(self):
+        idx = self.bandit.sample()
+
+        return idx
+    
+    def update(self):
+        '''
+        Use Equation 2 to update pt
+        φ with lt
+        it = Gφt (θt+1)
+        '''
+        

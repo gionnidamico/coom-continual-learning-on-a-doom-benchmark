@@ -9,7 +9,7 @@ from COOM.utils.config import Scenario
 from COOM.env.continual import ContinualLearningEnv
 from COOM.utils.config import Sequence
 
-from SAC.sac_conv import PolicyNetwork # for pickle load
+from bandit import Bandit
 
 # Test mode
 RESOLUTION = '1920x1080'
@@ -21,6 +21,20 @@ SCENARIO = Scenario.PITFALL
 MODEL = 'conv'
 
 SAVE_PATH = 'models/'
+
+num_heads = 1
+
+if 'owl' in MODEL:
+    num_heads = 8
+    bandit = Bandit() #pass all parameters needed 
+
+if MODEL == 'fc':
+    from SAC.sac_fc import PolicyNetwork
+elif MODEL == 'conv':
+    from SAC.sac_conv import PolicyNetwork
+
+elif MODEL == 'owl_conv':
+    from SAC.sac_conv import PolicyNetwork
 
 with open(f'{SAVE_PATH}model_{MODEL}.pkl', 'rb') as file:
     model = pickle.load(file)
@@ -38,11 +52,13 @@ if SEQUENCE == 'Single':    # train on single scenario
     state, _ = env.reset()
     #state = np.array(state)
     episode_reward = 0
+    task = 0
     done = False
+    state = torch.FloatTensor(np.array(state)).to(device)   # [1, 4, 84, 84, 3]
+    if 'owl' in MODEL:
+        task = Bandit.get_head()
     while not done:
-        if not torch.is_tensor(state):
-            state = torch.FloatTensor(np.array(state)).to(device)   # [1, 4, 84, 84, 3]
-        action = model.sample_action(state, batched=False, deterministic=True)
+        action = model.sample_action(state, batched=False, deterministic=True, task=task) 
         next_state, reward, done, truncated, _ = env.step(action)
         next_state = torch.FloatTensor(np.array(next_state)).to(device)#.unsqueeze(0)
         reward = torch.FloatTensor([reward]).to(device)#.unsqueeze(1)
@@ -57,6 +73,9 @@ if SEQUENCE == 'Single':    # train on single scenario
 
         state = next_state
         episode_reward += reward.item()
+
+        if 'owl' in MODEL:
+            task = Bandit.update()
 
     print(f"{SCENARIO} - Reward: {episode_reward}")
 
