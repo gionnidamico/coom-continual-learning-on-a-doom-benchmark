@@ -44,7 +44,7 @@ gamma = 0.99
 hidden_dim = 256
 batch_size = 32
 
-replay_buffer = ReplayBuffer(capacity=1000000)
+replay_buffer = ReplayBuffer(capacity=1000000, device=device)
 
 if MODEL == 'fc':
     from SAC.sac_fc import ValueNetwork, QNetwork, PolicyNetwork
@@ -165,13 +165,13 @@ def train_on_scenario(env):
 
     while not done:
         if not torch.is_tensor(state):
-            state = torch.FloatTensor(np.array(state)).to(device)   # [1, 4, 84, 84, 3]
+            state = torch.FloatTensor(np.array(state))#.to(device)   # [1, 4, 84, 84, 3]
         action = policy_net.sample_action(state, batched=False)
         next_state, reward, done, truncated, _ = env.step(action)
-        next_state = torch.FloatTensor(np.array(next_state)).to(device)
-        reward = torch.FloatTensor([reward]).to(device)
-        done = torch.FloatTensor([done]).to(device)
-        action = torch.LongTensor([action]).to(device)
+        next_state = torch.FloatTensor(np.array(next_state))#.to(device)
+        reward = torch.FloatTensor([reward])#.to(device)
+        done = torch.FloatTensor([done])#.to(device)
+        action = torch.LongTensor([action])#.to(device)
 
         if MODEL == 'fc':
             state = state.view(-1)
@@ -186,7 +186,7 @@ def train_on_scenario(env):
             #print(state_batch, action_batch, reward_batch, next_state_batch, done_batch)
             update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
             #update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
-
+            del state_batch, action_batch, reward_batch, next_state_batch, done_batch
         state = next_state
         episode_reward += reward.item()
 
