@@ -35,7 +35,7 @@ SCENARIO = Scenario.RUN_AND_GUN
 REGULARIZATION = 'ewc'
 
 # train params
-num_episodes = 2
+num_episodes = 1
 gamma = 0.99
 
 # the SAC Algorithm
@@ -162,11 +162,11 @@ def train_on_scenario(env):
     state, _ = env.reset()
     episode_reward = 0
     done = False
+    state = torch.FloatTensor(np.array(state))#.to(device)   # [1, 4, 84, 84, 3]
 
     while not done:
-        if not torch.is_tensor(state):
-            state = torch.FloatTensor(np.array(state))#.to(device)   # [1, 4, 84, 84, 3]
-        action = policy_net.sample_action(state, batched=False)
+        # state not included here because it's already done before for the first iteration, and will be done for nexe_state for each iteration after
+        action = policy_net.sample_action(state.to(device), batched=False)
         next_state, reward, done, truncated, _ = env.step(action)
         next_state = torch.FloatTensor(np.array(next_state))#.to(device)
         reward = torch.FloatTensor([reward])#.to(device)
@@ -186,7 +186,7 @@ def train_on_scenario(env):
             #print(state_batch, action_batch, reward_batch, next_state_batch, done_batch)
             update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
             #update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
-            del state_batch, action_batch, reward_batch, next_state_batch, done_batch
+            del state_batch, action_batch, reward_batch, next_state_batch, done_batch   # free up gpu space 
         state = next_state
         episode_reward += reward.item()
 
