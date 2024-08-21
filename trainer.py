@@ -166,7 +166,7 @@ def train_on_scenario(env):
 
     while not done:
         # state not included here because it's already done before for the first iteration, and will be done for nexe_state for each iteration after
-        action = policy_net.sample_action(state.to(device), batched=False)
+        action = policy_net.sample_action(state.to(device), batched=False, determistic=False)
         next_state, reward, done, truncated, _ = env.step(action)
         next_state = torch.FloatTensor(np.array(next_state))#.to(device)
         reward = torch.FloatTensor([reward])#.to(device)

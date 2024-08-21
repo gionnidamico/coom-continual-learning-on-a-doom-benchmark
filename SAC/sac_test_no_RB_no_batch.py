@@ -60,6 +60,20 @@ class PolicyNetwork(nn.Module):
         probs = self.forward(state_flattened)
         action = torch.distributions.Categorical(probs).sample()
         return action.item()
+    
+
+    def sample_action(self, state, deterministic=True):       # batched is ignored in conv version because there is no flatten() in input to consider
+    # Flatten the state to fit in fully connected network
+        #state_array = np.array(state)
+        state_flattened = state.flatten()  # [batch_size, 4*84*84*3]
+
+        probs = self.forward(state_flattened)
+        if deterministic: # test  mode
+            action = torch.argmax(probs, dim=1)
+        else:           # train mode
+            action = torch.distributions.Categorical(probs).sample()
+        
+        return action.item()
 
 
 

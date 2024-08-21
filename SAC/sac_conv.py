@@ -102,12 +102,17 @@ class PolicyNetwork(nn.Module):
         probs = F.softmax(logits, dim=-1)
         return probs
 
-    def sample_action(self, state, batched=True):       # batched is ignored in conv version because there is no flatten() in input to consider
+    # when training we are in stochastic mode to explore, when training we don't sample from the distribution
+    def sample_action(self, state, batched=True, deterministic=True):       # batched is ignored in conv version because there is no flatten() in input to consider
         # if not batched:
         #     state = state.unsqueeze(0)
 
         probs = self.forward(state, batched)
-        action = torch.distributions.Categorical(probs).sample()
+        if deterministic: # test  mode
+            action = torch.argmax(probs, dim=1)
+        else:           # train mode
+            action = torch.distributions.Categorical(probs).sample()
+        
         return action.item()
 
 
