@@ -38,7 +38,7 @@ class ValueNetwork(nn.Module):
     
 # The QNetwork estimates the Q-value 𝑄(𝑠,𝑎) for each action.
 class QNetwork(nn.Module):
-    def __init__(self, num_channels, num_actions, hidden_dim, init_w=3e-3):
+    def __init__(self, num_channels, num_actions, hidden_dim, n_head = 1, init_w=3e-3):
         super(QNetwork, self).__init__()
         
          # Convolutional layers with specified strides
@@ -47,29 +47,36 @@ class QNetwork(nn.Module):
 
         # Fully connected layers
         self.flatten_dim = 64 * 10 * 10 * 1
-        self.fc1 = nn.Linear(self.flatten_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.output_layer = nn.Linear(hidden_dim, num_actions)
+        self.fc1l = nn.ModuleList()
+        self.fc2l = nn.ModuleList()
+        self.output_layerl = nn.ModuleList()
+        for _ in range(n_head): # n_head is 1 if owl is not used else is = number of tasks
+            self.fc1l.append(nn.Linear(self.flatten_dim, hidden_dim))
+            self.fc2l.append(nn.Linear(hidden_dim, hidden_dim))
+            output_layer = nn.Linear(hidden_dim, num_actions)
 
-        # (optional) Weight initialization 
-        self.output_layer.weight.data.uniform_(-init_w, init_w)
-        self.output_layer.bias.data.uniform_(-init_w, init_w)
+            # (optional) Weight initialization 
+            output_layer.weight.data.uniform_(-init_w, init_w)
+            output_layer.bias.data.uniform_(-init_w, init_w)
 
-    def forward(self, state):
+            self.output_layerl.append(output_layer)
+
+    def forward(self, state, head = 0):
         state = state.permute(0, 4, 2, 3, 1)
 
         x = F.relu(self.conv1(state))
         x = F.relu(self.conv2(x))
         x = x.view(x.size(0), -1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        q_values = self.output_layer(x)
+        
+        x = F.relu(self.fc1l[head](x))
+        x = F.relu(self.fc2l[head](x))
+        q_values = self.output_layerl[head](x)
         return q_values
     
 
 # The PolicyNetwork outputs a probability distribution over actions.
 class PolicyNetwork(nn.Module):
-    def __init__(self, num_channels, num_actions, hidden_dim, init_w=3e-3):
+    def __init__(self, num_channels, num_actions, hidden_dim, n_head = 1, init_w=3e-3):
         super(PolicyNetwork, self).__init__()
         
         # Convolutional layers with specified strides
@@ -78,11 +85,21 @@ class PolicyNetwork(nn.Module):
 
         # Fully connected layers
         self.flatten_dim = 64 * 10 * 10 * 1
-        self.fc1 = nn.Linear(self.flatten_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.out = nn.Linear(hidden_dim, num_actions)
+        self.fc1l = nn.ModuleList()
+        self.fc2l = nn.ModuleList()
+        self.output_layerl = nn.ModuleList()
+        for _ in range(n_head): # n_head is 1 if owl is not used else is = number of tasks
+            self.fc1l.append(nn.Linear(self.flatten_dim, hidden_dim))
+            self.fc2l.append(nn.Linear(hidden_dim, hidden_dim))
+            output_layer = nn.Linear(hidden_dim, num_actions)
 
-    def forward(self, state, batched=True):
+            # (optional) Weight initialization 
+            output_layer.weight.data.uniform_(-init_w, init_w)
+            output_layer.bias.data.uniform_(-init_w, init_w)
+
+            self.output_layerl.append(output_layer)
+
+    def forward(self, state, batched=True, head = 0):
         # if batched:
         #     state_flattened = state.view(state.size(0), -1)  # [batch_size, 4*84*843]
         # else:
@@ -95,19 +112,20 @@ class PolicyNetwork(nn.Module):
         x = F.relu(self.conv1(state))   
         x = F.relu(self.conv2(x))
         x = x.view(x.size(0), -1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        
+        x = F.relu(self.fc1l[head](x))
+        x = F.relu(self.fc2l[head](x))
+        logits = self.output_layerl[head](x)
 
-        logits = self.out(x)
         probs = F.softmax(logits, dim=-1)
         return probs
 
     # when training we are in stochastic mode to explore, when training we don't sample from the distribution
-    def sample_action(self, state, batched=True, deterministic=True):       # batched is ignored in conv version because there is no flatten() in input to consider
+    def sample_action(self, state, task, batched=True, deterministic=True):       # batched is ignored in conv version because there is no flatten() in input to consider
         # if not batched:
         #     state = state.unsqueeze(0)
 
-        probs = self.forward(state, batched)
+        probs = self.forward(state, batched, task)
         if deterministic: # test  mode
             action = torch.argmax(probs, dim=1)
         else:           # train mode

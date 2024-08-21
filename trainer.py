@@ -22,7 +22,7 @@ device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 # SAC type
-MODEL = 'conv'
+MODEL = 'owl_conv'
 
 SAVE_PATH = 'models/'
 
@@ -43,23 +43,29 @@ gamma = 0.99
 # Initialize Networks and Optimizers
 hidden_dim = 256
 batch_size = 32
+num_heads = 1
+num_actions = 12  # Example number of actions
 
 replay_buffer = ReplayBuffer(capacity=1000000, device=device)
 
 if MODEL == 'fc':
     from SAC.sac_fc import ValueNetwork, QNetwork, PolicyNetwork
     state_dim = 4*84*84*3  # Example state dimension
-    num_actions = 12  # Example number of actions
 elif MODEL == 'conv':
     from SAC.sac_conv import ValueNetwork, QNetwork, PolicyNetwork
     num_channels = 3
     state_dim = num_channels  # Example state dimension
-    num_actions = 12  # Example number of actions
+
+elif MODEL == 'owl_conv':
+    from SAC.sac_conv import ValueNetwork, QNetwork, PolicyNetwork
+    num_channels = 3
+    state_dim = num_channels  # Example state dimension
+    num_heads = 8
 
 value_net = ValueNetwork(state_dim, hidden_dim).to(device)
-q_net1 = QNetwork(state_dim, num_actions, hidden_dim).to(device)
-q_net2 = QNetwork(state_dim, num_actions, hidden_dim).to(device)
-policy_net = PolicyNetwork(state_dim, num_actions, hidden_dim).to(device)
+q_net1 = QNetwork(state_dim, num_actions, hidden_dim, n_head = num_heads).to(device)
+q_net2 = QNetwork(state_dim, num_actions, hidden_dim, n_head = num_heads).to(device)
+policy_net = PolicyNetwork(state_dim, num_actions, hidden_dim, n_head = num_heads).to(device)
 
 value_optimizer = optim.Adam(value_net.parameters(), lr=3e-4)
 q_optimizer1 = optim.Adam(q_net1.parameters(), lr=3e-4)
@@ -80,11 +86,11 @@ def value_loss(state, q_net1, q_net2, value_net):
     #print(f"values:{value.shape}, {next_value.shape}")
     return F.mse_loss(value, next_value)
 
-def q_loss(state, action, reward, next_state, done, q_net, target_value_net, reg):
+def q_loss(state, action, reward, next_state, done, q_net, target_value_net, reg, task):
     with torch.no_grad():
         next_value = target_value_net(next_state)
         target_q = reward + (1 - done) * next_value
-    q_values = q_net(state)
+    q_values = q_net(state, head = task)
     q_value = q_values.gather(1, action)   # get the Nth q_value that corresponds to the action taken (second dimension of action tensor)
     #print(f"q_values shape: {q_value.shape}, {target_q.shape}")
 
@@ -98,10 +104,10 @@ def q_loss(state, action, reward, next_state, done, q_net, target_value_net, reg
     '''
     return F.mse_loss(q_value, target_q) + reg_weights
 
-def policy_loss(state, q_net, policy_net, reg):
+def policy_loss(state, q_net, policy_net, reg, task):
     state = state.detach().requires_grad_()
-    probs = policy_net(state)
-    q_values = q_net(state)
+    probs = policy_net(state, head = task)
+    q_values = q_net(state, head = task)
     log_probs = torch.log(probs + 1e-8)
     policy_loss = (probs * (log_probs - q_values.detach())).sum(dim=-1).mean()
 
@@ -117,7 +123,7 @@ def policy_loss(state, q_net, policy_net, reg):
 
 
 # Training Step
-def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer):
+def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task):
     
     # Flatten the state to fit in fully connected network
     #state_array = np.array(state)
@@ -138,8 +144,8 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
     # Update Q Networks
     q_optimizer1.zero_grad()
     q_optimizer2.zero_grad()
-    q_loss1 = q_loss(state, action, reward, next_state, done, q_net1, value_net, reg)
-    q_loss2 = q_loss(state, action, reward, next_state, done, q_net2, value_net, reg)
+    q_loss1 = q_loss(state, action, reward, next_state, done, q_net1, value_net, reg, task)
+    q_loss2 = q_loss(state, action, reward, next_state, done, q_net2, value_net, reg, task)
     q_loss1.backward()
     q_loss2.backward()
     q_optimizer1.step()
@@ -147,7 +153,7 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
 
     # Update Policy Network
     policy_optimizer.zero_grad()
-    p_loss = policy_loss(state, q_net1, policy_net, reg)
+    p_loss = policy_loss(state, q_net1, policy_net, reg, task)
     p_loss.backward()
     policy_optimizer.step()
 
@@ -158,7 +164,7 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
 # Create and Train in an Environment
 
 # Train on a scenario until the end
-def train_on_scenario(env):
+def train_on_scenario(env, task = 0):
     state, _ = env.reset()
     episode_reward = 0
     done = False
@@ -166,7 +172,7 @@ def train_on_scenario(env):
 
     while not done:
         # state not included here because it's already done before for the first iteration, and will be done for nexe_state for each iteration after
-        action = policy_net.sample_action(state.to(device), batched=False, determistic=False)
+        action = policy_net.sample_action(state.to(device), task, batched=False, deterministic=False)
         next_state, reward, done, truncated, _ = env.step(action)
         next_state = torch.FloatTensor(np.array(next_state))#.to(device)
         reward = torch.FloatTensor([reward])#.to(device)
@@ -184,9 +190,10 @@ def train_on_scenario(env):
         if len(replay_buffer) > batch_size:
             state_batch, action_batch, reward_batch, next_state_batch, done_batch = replay_buffer.sample(batch_size)    ### single batch
             #print(state_batch, action_batch, reward_batch, next_state_batch, done_batch)
-            update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
+            update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task)
             #update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
-            del state_batch, action_batch, reward_batch, next_state_batch, done_batch   # free up gpu space 
+            
+            #del state_batch, action_batch, reward_batch, next_state_batch, done_batch   # free up gpu space 
         state = next_state
         episode_reward += reward.item()
 
@@ -201,10 +208,12 @@ print("\nTraining STARTING...")
 
 # choose between 'SINGLE' and 'SEQUENCE'
 
+task = 0
+
 if SEQUENCE == 'Single':    # train on single scenario
     env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
     for episode in range(num_episodes):
-        episode_reward = train_on_scenario(env)
+        episode_reward = train_on_scenario(env, task )
         print(f"Episode {episode+1}, Reward: {episode_reward}")
 
 
@@ -214,8 +223,11 @@ else:
     cl_env = ContinualLearningEnv(SEQUENCE)
     for episode in range(num_episodes):
         for env in cl_env.tasks:
-            episode_reward = train_on_scenario(env)
+            episode_reward = train_on_scenario(env, task)
             tot_reward += episode_reward
+            if 'owl' in MODEL: # this is to empty the buffer when switching head
+                replay_buffer = ReplayBuffer(capacity=1000000, device=device)
+            task += 1
         print(f"Episode {episode+1}, Reward: {episode_reward}")
 
 

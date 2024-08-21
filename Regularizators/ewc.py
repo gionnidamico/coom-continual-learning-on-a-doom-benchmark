@@ -12,7 +12,9 @@ class ewc():
             # Compute the gradient of the output with respect to the parameter
             jacobianq = torch.autograd.grad(outputs=q, inputs=param,
                                         grad_outputs=torch.ones_like(q),
-                                        create_graph=True, retain_graph=True)[0]
+                                        create_graph=True, retain_graph=True, allow_unused=True)[0]
+            if jacobianq == None:
+                continue
             jacobianqs.append(jacobianq.flatten()**2)
         for q_g in jacobianqs:
             fisher = q_g**2
@@ -27,7 +29,9 @@ class ewc():
             # Compute the gradient of the output with respect to the parameter
             jacobianpolicy = torch.autograd.grad(outputs=probs, inputs=param,
                                         grad_outputs=torch.ones_like(probs),
-                                        create_graph=True, retain_graph=True)[0]
+                                        create_graph=True, retain_graph=True, allow_unused=True)[0]
+            if jacobianpolicy == None:
+                continue
             jacobianpolicys.append(jacobianpolicy.flatten()**2)
 
         for gs in jacobianpolicys:
