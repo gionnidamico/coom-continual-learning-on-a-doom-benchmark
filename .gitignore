@@ -5,3 +5,4 @@ model_conv.pkl
 model.pkl
 __pycache__
 models/model_fc.pkl
+models/model_conv(first).pkl
