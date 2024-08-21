@@ -208,12 +208,11 @@ print("\nTraining STARTING...")
 
 # choose between 'SINGLE' and 'SEQUENCE'
 
-task = 0
 
 if SEQUENCE == 'Single':    # train on single scenario
     env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
     for episode in range(num_episodes):
-        episode_reward = train_on_scenario(env, task )
+        episode_reward = train_on_scenario(env, task = 0)
         print(f"Episode {episode+1}, Reward: {episode_reward}")
 
 
@@ -222,6 +221,7 @@ else:
     tot_reward = 0
     cl_env = ContinualLearningEnv(SEQUENCE)
     for episode in range(num_episodes):
+        task = 0
         for env in cl_env.tasks:
             episode_reward = train_on_scenario(env, task)
             tot_reward += episode_reward
