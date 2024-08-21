@@ -35,7 +35,7 @@ SCENARIO = Scenario.RUN_AND_GUN
 REGULARIZATION = 'ewc'
 
 # train params
-num_episodes = 1
+num_episodes = 60
 gamma = 0.99
 
 # the SAC Algorithm
@@ -225,7 +225,8 @@ else:
         for env in cl_env.tasks:
             episode_reward = train_on_scenario(env, task)
             tot_reward += episode_reward
-            if 'owl' in MODEL: # this is to empty the buffer when switching head
+            if 'owl' in MODEL: # this is to empty the buffer when switching head 
+                # we could create RP for each task not to lose experience (maybe we could use the priority for that)
                 replay_buffer = ReplayBuffer(capacity=1000000, device=device)
             task += 1
         print(f"Episode {episode+1}, Reward: {episode_reward}")
