@@ -65,7 +65,24 @@ class ExpWeights(object):
 
 class OWL():
 
-    def __init__(self):
+    def __init__(self, num_actions, num_tasks, episode_max_steps):
         super()
+        self.num_actions = num_actions
+        self.num_tasks = num_tasks
+        self.episode_max_steps = episode_max_steps
 
-    
+    def test_agent(self, deterministic: bool, num_episodes: int):
+        mode = "deterministic" if deterministic else "stochastic"
+
+         # Bandit params
+        lr = 0.90
+        decay = 0.90
+        epsilon = 0.0
+        bandit_step = 1
+        greedy_bandit = True
+        bandit_loss = 'mse'
+
+        # TB - Bandit init
+        bandit_probs, bandit_p = np.empty((self.num_tasks, self.num_tasks, num_episodes)), np.empty(
+            (self.num_tasks, self.num_tasks, num_episodes, self.episode_max_steps + 1))
+        bandit_probs[:], bandit_p[:] = np.nan, np.nan
