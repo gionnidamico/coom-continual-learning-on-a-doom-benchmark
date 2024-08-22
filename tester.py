@@ -15,7 +15,7 @@ from bandit import Bandit
 RESOLUTION = '1920x1080'
 RENDER = True       # If render is true, resolution is always 1920x1080 to match my screen
 SEQUENCE =  'Single'        #'Single', 'CO8' : define on which sequence you would like to test 
-SCENARIO = Scenario.FLOOR_IS_LAVA
+SCENARIO = Scenario.PITFALL
 
 # SAC type
 MODEL = 'owl conv'
