@@ -15,29 +15,29 @@ from bandit import Bandit
 RESOLUTION = '1920x1080'
 RENDER = True       # If render is true, resolution is always 1920x1080 to match my screen
 SEQUENCE =  'Single'        #'Single', 'CO8' : define on which sequence you would like to test 
-SCENARIO = Scenario.PITFALL
+SCENARIO = Scenario.RUN_AND_GUN
 
 # SAC type
-MODEL = 'conv'
+MODEL = 'owl conv'
 
 SAVE_PATH = 'models/'
 
 num_heads = 1
 
 if 'owl' in MODEL:
-    num_heads = 8
-    bandit = Bandit() #pass all parameters needed 
-
-if MODEL == 'fc':
-    from SAC.sac_fc import PolicyNetwork
-elif MODEL == 'conv':
     from SAC.sac_conv import PolicyNetwork
+    num_heads = 8
+    gamma = 0.99
+    bandit = Bandit(12, 8) #pass all parameters needed 
 
-elif MODEL == 'owl_conv':
+if 'fc' in MODEL:
+    from SAC.sac_fc import PolicyNetwork
+elif 'conv' in MODEL:
     from SAC.sac_conv import PolicyNetwork
 
 with open(f'{SAVE_PATH}model_{MODEL}.pkl', 'rb') as file:
     model = pickle.load(file)
+    model.eval()
 
 # use gpu
 device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -56,9 +56,10 @@ if SEQUENCE == 'Single':    # train on single scenario
     done = False
     state = torch.FloatTensor(np.array(state)).to(device)   # [1, 4, 84, 84, 3]
     if 'owl' in MODEL:
-        task = Bandit.get_head()
+        task = bandit.get_head()
     while not done:
         action = model.sample_action(state, batched=False, deterministic=True, task=task) 
+        action_probs = model(state, batched=False, head=task)
         next_state, reward, done, truncated, _ = env.step(action)
         next_state = torch.FloatTensor(np.array(next_state)).to(device)#.unsqueeze(0)
         reward = torch.FloatTensor([reward]).to(device)#.unsqueeze(1)
@@ -75,7 +76,9 @@ if SEQUENCE == 'Single':    # train on single scenario
         episode_reward += reward.item()
 
         if 'owl' in MODEL:
-            task = Bandit.update()
+            next_actions = model.sample_action(state, batched=False, deterministic=True, task=task) 
+            next_actions_probs = model(state, batched=False, head=task)
+            task = bandit.update(next_actions, next_actions_probs, action, action_probs, reward, done, gamma, device)
 
     print(f"{SCENARIO} - Reward: {episode_reward}")
 

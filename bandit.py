@@ -1,6 +1,7 @@
 from typing import List
 
 import numpy as np
+import torch
 
 class ExpWeights(object):
 
@@ -59,11 +60,10 @@ class ExpWeights(object):
 
 class Bandit():
 
-    def __init__(self, num_actions, num_tasks, episode_max_steps, num_episodes: int):
+    def __init__(self, num_actions, num_tasks):
         super()
         self.num_actions = num_actions
         self.num_tasks = num_tasks
-        self.episode_max_steps = episode_max_steps
 
          # Bandit params
         lr = 0.90
@@ -73,10 +73,6 @@ class Bandit():
         greedy_bandit = True
         bandit_loss = 'mse'
 
-        # TB - Bandit init
-        bandit_probs, bandit_p = np.empty((self.num_tasks, self.num_tasks, num_episodes)), np.empty(
-            (self.num_tasks, self.num_tasks, num_episodes, self.episode_max_steps + 1))
-        bandit_probs[:], self.bandit_p[:] = np.nan, np.nan
         self.bandit = ExpWeights(arms=list(range(num_tasks)), lr=lr, decay=decay, greedy=greedy_bandit, epsilon=epsilon)
 
     def get_head(self):
@@ -84,10 +80,20 @@ class Bandit():
 
         return idx
     
-    def update(self):
+    def update(self, next_actions, next_actions_probs, action, action_probs, reward, done, gamma, device):
         '''
         Use Equation 2 to update pt
         φ with lt
         it = Gφt (θt+1)
         '''
+        scores = []
+        q_target = next_actions
+        value_target = reward + (1.0 - done) * gamma * q_target
+        for _ in range(self.num_tasks):
+            state_action_values = action_probs.gather(1, torch.Tensor(np.array([action.cpu()])).long().view(1, -1).to(device))
+            mus_ = state_action_values.detach().cpu().numpy()
+            mse = np.sqrt(np.mean((mus_ - value_target.cpu().numpy()) ** 2))
+            scores.append(min(1/mse, 50))
+
+        self.bandit.update_dists(scores)
         

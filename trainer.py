@@ -21,7 +21,7 @@ device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 # SAC type
-MODEL = 'conv'
+MODEL = 'owl conv'
 
 SAVE_PATH = 'models/'
 
