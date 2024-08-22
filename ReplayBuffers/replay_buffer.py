@@ -20,12 +20,12 @@ class ReplayBuffer:
         batch = random.sample(self.buffer, batch_size)
         state, action, reward, next_state, done = zip(*batch)
         
-        # Use np.concatenate or np.stack based on the dimension of the arrays
-        state = torch.stack(state)  # Assuming states are of consistent shape
-        next_state = torch.stack(next_state)  # Assuming next_states are of consistent shape
-        action = torch.stack(action)  # Assuming actions are scalars or vectors
-        reward = torch.stack(reward)  # Assuming rewards are scalars
-        done = torch.stack(done)  # Assuming dones are scalars
+        # Pick up a stack of batch_size lenght
+        state = torch.stack(state)  
+        next_state = torch.stack(next_state)  
+        action = torch.stack(action)  
+        reward = torch.stack(reward)
+        done = torch.stack(done)  
 
         # Put tensors on CUDA if available only when used to avoid eating up too much gpu ram
         return state.to(self.device), action.to(self.device), reward.to(self.device), next_state.to(self.device), done.to(self.device)
