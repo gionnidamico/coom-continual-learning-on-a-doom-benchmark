@@ -15,7 +15,7 @@ from bandit import Bandit
 RESOLUTION = '1920x1080'
 RENDER = True       # If render is true, resolution is always 1920x1080 to match my screen
 SEQUENCE =  'Single'        #'Single', 'CO8' : define on which sequence you would like to test 
-SCENARIO = Scenario.RUN_AND_GUN
+SCENARIO = Scenario.FLOOR_IS_LAVA
 
 # SAC type
 MODEL = 'owl conv'
@@ -55,9 +55,9 @@ if SEQUENCE == 'Single':    # train on single scenario
     task = 0
     done = False
     state = torch.FloatTensor(np.array(state)).to(device)   # [1, 4, 84, 84, 3]
-    if 'owl' in MODEL:
-        task = bandit.get_head()
     while not done:
+        if 'owl' in MODEL:
+            task = bandit.get_head()
         action = model.sample_action(state, batched=False, deterministic=True, task=task) 
         action_probs = model(state, batched=False, head=task)
         next_state, reward, done, truncated, _ = env.step(action)
@@ -78,7 +78,7 @@ if SEQUENCE == 'Single':    # train on single scenario
         if 'owl' in MODEL:
             next_actions = model.sample_action(state, batched=False, deterministic=True, task=task) 
             next_actions_probs = model(state, batched=False, head=task)
-            task = bandit.update(next_actions, next_actions_probs, action, action_probs, reward, done, gamma, device)
+            bandit.update(next_actions, next_actions_probs, action, action_probs, reward, done, gamma, device)
 
     print(f"{SCENARIO} - Reward: {episode_reward}")
 
