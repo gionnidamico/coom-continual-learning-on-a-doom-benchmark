@@ -10,7 +10,7 @@ class ewc():
         reg_weights = []
         for param in softq.parameters():
             # Compute the gradient of the output with respect to the parameter
-            jacobianq = torch.autograd.grad(outputs=q, inputs=param,
+            jacobianq = torch.autograd.grad(outputs=q, inputs=param,  #torch.sum()
                                         grad_outputs=torch.ones_like(q),
                                         create_graph=True, retain_graph=True, allow_unused=True)[0]
             if jacobianq == None:
@@ -27,7 +27,7 @@ class ewc():
         reg_weights = []
         for param in policynet.parameters():
             # Compute the gradient of the output with respect to the parameter
-            jacobianpolicy = torch.autograd.grad(outputs=probs, inputs=param,
+            jacobianpolicy = torch.autograd.grad(outputs=probs, inputs=param,  #torch.sum()
                                         grad_outputs=torch.ones_like(probs),
                                         create_graph=True, retain_graph=True, allow_unused=True)[0]
             if jacobianpolicy == None:
@@ -38,6 +38,6 @@ class ewc():
             fisher = torch.sum(gs**2, 0)
 
             fisher = torch.clamp(fisher, min=1e-5)
-            reg_weights.append(self.lambdaq * torch.mean(gs, dim=0))
+            reg_weights.append(self.lambdaq * torch.mean(fisher, dim=0))
 
         return torch.sum(torch.stack(reg_weights, dim = 0))

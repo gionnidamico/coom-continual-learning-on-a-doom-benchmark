@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import numpy as np
 
 from ReplayBuffers.replay_buffer import ReplayBuffer
-from Regularizators.ewc import ewc
+
 
 from COOM.env.builder import make_env
 from COOM.utils.config import Scenario
@@ -28,10 +28,10 @@ SAVE_PATH = 'models/'
 # train config
 RESOLUTION = '160X120'
 RENDER = False       # If render is true, resolution is always 1920x1080 to match my screen
-SEQUENCE = Sequence.CO8 #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
-SCENARIO = Scenario.RUN_AND_GUN
+SEQUENCE = 'Single' #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
+SCENARIO = Scenario.PITFALL
 
-REGULARIZATION = 'ewc'
+REGULARIZATION = 'mas'
 
 # train params
 num_episodes = 10
@@ -130,9 +130,12 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
 
     # Update Value Network
     reg = None
-    if REGULARIZATION == 'ewc' :
+    if REGULARIZATION == 'ewc':
+        from Regularizators.ewc import ewc
         reg = ewc()
-    
+    elif REGULARIZATION == 'mas':
+        from Regularizators.mas import mas
+        reg = mas()
 
     value_optimizer.zero_grad()
     v_loss = value_loss(state, q_net1, q_net2, value_net)
