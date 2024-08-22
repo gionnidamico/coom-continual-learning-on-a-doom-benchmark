@@ -21,7 +21,7 @@ device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 # SAC type
-MODEL = 'owl conv'
+MODEL = 'conv'
 
 SAVE_PATH = 'models/'
 
@@ -233,7 +233,8 @@ else:
                     # we could create RP for each task not to lose experience (maybe we could use the priority for that)
                     replay_buffer = ReplayBuffer(capacity=1000000, device=device)
                 '''
-            task += 1
+            if 'owl' in MODEL:
+                task += 1
             print(f"Episode {episode+1}, Reward: {episode_reward}")
 
 
