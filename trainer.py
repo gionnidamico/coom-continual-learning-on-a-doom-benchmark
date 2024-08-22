@@ -1,6 +1,5 @@
 from statistics import mean
 import torch
-import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
@@ -22,7 +21,7 @@ device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 # SAC type
-MODEL = 'owl_conv'
+MODEL = 'owl conv'
 
 SAVE_PATH = 'models/'
 
@@ -35,42 +34,41 @@ SCENARIO = Scenario.RUN_AND_GUN
 REGULARIZATION = 'ewc'
 
 # train params
-num_episodes = 60
+num_episodes = 10
 gamma = 0.99
 
 # the SAC Algorithm
 
 # Initialize Networks and Optimizers
-hidden_dim = 256
+hidden_dim = 128
 batch_size = 32
 num_heads = 1
 num_actions = 12  # Example number of actions
 
-replay_buffer = ReplayBuffer(capacity=1000000, device=device)
 
-if MODEL == 'fc':
+if 'fc' in MODEL:
     from SAC.sac_fc import ValueNetwork, QNetwork, PolicyNetwork
     state_dim = 4*84*84*3  # Example state dimension
-elif MODEL == 'conv':
+elif 'conv' in MODEL:
     from SAC.sac_conv import ValueNetwork, QNetwork, PolicyNetwork
     num_channels = 3
     state_dim = num_channels  # Example state dimension
-
-elif MODEL == 'owl_conv':
+if 'owl' in MODEL:
     from SAC.sac_conv import ValueNetwork, QNetwork, PolicyNetwork
-    num_channels = 3
-    state_dim = num_channels  # Example state dimension
     num_heads = 8
+
+
+replay_buffers = [ReplayBuffer(capacity=1000, device=device) for _ in range(num_heads)]
 
 value_net = ValueNetwork(state_dim, hidden_dim).to(device)
 q_net1 = QNetwork(state_dim, num_actions, hidden_dim, n_head = num_heads).to(device)
 q_net2 = QNetwork(state_dim, num_actions, hidden_dim, n_head = num_heads).to(device)
 policy_net = PolicyNetwork(state_dim, num_actions, hidden_dim, n_head = num_heads).to(device)
 
-value_optimizer = optim.Adam(value_net.parameters(), lr=3e-4)
-q_optimizer1 = optim.Adam(q_net1.parameters(), lr=3e-4)
-q_optimizer2 = optim.Adam(q_net2.parameters(), lr=3e-4)
-policy_optimizer = optim.Adam(policy_net.parameters(), lr=3e-4)
+value_optimizer = optim.Adam(value_net.parameters(), lr=1e-4)
+q_optimizer1 = optim.Adam(q_net1.parameters(), lr=1e-4)
+q_optimizer2 = optim.Adam(q_net2.parameters(), lr=1e-4)
+policy_optimizer = optim.Adam(policy_net.parameters(), lr=1e-4)
 
 
 # Define the Loss Functions
@@ -184,11 +182,11 @@ def train_on_scenario(env, task = 0):
             next_state = next_state.view(-1)
 
         #print(state.shape, action.shape, reward.shape, next_state.shape, done.shape)
-        replay_buffer.push(state, action, reward, next_state, done)
+        replay_buffers[task].push(state, action, reward, next_state, done)
 
         # Replace the above line with logic that checks if enough samples are in the buffer before updating
-        if len(replay_buffer) > batch_size:
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch = replay_buffer.sample(batch_size)    ### single batch
+        if len(replay_buffers[task]) > batch_size:
+            state_batch, action_batch, reward_batch, next_state_batch, done_batch = replay_buffers[task].sample(batch_size)    ### single batch
             #print(state_batch, action_batch, reward_batch, next_state_batch, done_batch)
             update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task)
             #update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
@@ -209,10 +207,13 @@ print("\nTraining STARTING...")
 # choose between 'SINGLE' and 'SEQUENCE'
 
 
+episodes_reward = []
+
 if SEQUENCE == 'Single':    # train on single scenario
     env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
     for episode in range(num_episodes):
         episode_reward = train_on_scenario(env, task = 0)
+        episodes_reward.append(episode_reward)
         print(f"Episode {episode+1}, Reward: {episode_reward}")
 
 
@@ -223,13 +224,17 @@ else:
     for episode in range(num_episodes):
         task = 0
         for env in cl_env.tasks:
-            episode_reward = train_on_scenario(env, task)
-            tot_reward += episode_reward
-            if 'owl' in MODEL: # this is to empty the buffer when switching head 
-                # we could create RP for each task not to lose experience (maybe we could use the priority for that)
-                replay_buffer = ReplayBuffer(capacity=1000000, device=device)
+            for _ in range(2):
+                episode_reward = train_on_scenario(env, task)
+                episodes_reward.append(episode_reward)
+                tot_reward += episode_reward
+                '''
+                if 'owl' in MODEL: # this is to empty the buffer when switching head 
+                    # we could create RP for each task not to lose experience (maybe we could use the priority for that)
+                    replay_buffer = ReplayBuffer(capacity=1000000, device=device)
+                '''
             task += 1
-        print(f"Episode {episode+1}, Reward: {episode_reward}")
+            print(f"Episode {episode+1}, Reward: {episode_reward}")
 
 
 
