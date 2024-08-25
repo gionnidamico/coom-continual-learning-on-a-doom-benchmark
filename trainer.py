@@ -5,9 +5,6 @@ import torch.nn.functional as F
 
 import numpy as np
 
-from ReplayBuffers.replay_buffer import ReplayBuffer
-
-
 from COOM.env.builder import make_env
 from COOM.utils.config import Scenario
 
@@ -28,24 +25,25 @@ SAVE_PATH = 'models/'
 # train config
 RESOLUTION = '160X120'
 RENDER = False       # If render is true, resolution is always 1920x1080 to match my screen
-SEQUENCE = 'Single' #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
+SEQUENCE = Sequence.CO8  #'Single' #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
 SCENARIO = Scenario.PITFALL
 
 REGULARIZATION = 'mas'
+USE_PER = True # if false, use the vanilla Replay Buffer instead
 
 # train params
-num_episodes = 10
+num_episodes = 3
 gamma = 0.99
 
 # the SAC Algorithm
 
 # Initialize Networks and Optimizers
-hidden_dim = 128
+hidden_dim = 256
 batch_size = 32
 num_heads = 1
 num_actions = 12  # Example number of actions
 
-
+# Choose the model to use
 if 'fc' in MODEL:
     from SAC.sac_fc import ValueNetwork, QNetwork, PolicyNetwork
     state_dim = 4*84*84*3  # Example state dimension
@@ -57,9 +55,24 @@ if 'owl' in MODEL:
     from SAC.sac_conv import ValueNetwork, QNetwork, PolicyNetwork
     num_heads = 8
 
+# Choose the regularizator if one is chosen
+reg = None
+if REGULARIZATION == 'ewc':
+    from Regularizators.ewc import ewc
+    reg = ewc()
+elif REGULARIZATION == 'mas':
+    from Regularizators.mas import mas
+    reg = mas()
 
-replay_buffers = [ReplayBuffer(capacity=1000, device=device) for _ in range(num_heads)]
+# Choose the replay buffer to use
+if USE_PER:
+    from ReplayBuffers.prioritized_RB import PrioritizedReplayBuffer
+    replay_buffers = [PrioritizedReplayBuffer(capacity=1000, device=device) for _ in range(num_heads)]
+else:
+    from ReplayBuffers.replay_buffer import ReplayBuffer
+    replay_buffers = [ReplayBuffer(capacity=1000, device=device) for _ in range(num_heads)]
 
+# Define the networks to use and the optimizers
 value_net = ValueNetwork(state_dim, hidden_dim).to(device)
 q_net1 = QNetwork(state_dim, num_actions, hidden_dim, n_head = num_heads).to(device)
 q_net2 = QNetwork(state_dim, num_actions, hidden_dim, n_head = num_heads).to(device)
@@ -121,7 +134,7 @@ def policy_loss(state, q_net, policy_net, reg, task):
 
 
 # Training Step
-def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task):
+def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg=None):
     
     # Flatten the state to fit in fully connected network
     #state_array = np.array(state)
@@ -129,14 +142,6 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
     # print(f'Tensor here is {state_flattened.shape}')
 
     # Update Value Network
-    reg = None
-    if REGULARIZATION == 'ewc':
-        from Regularizators.ewc import ewc
-        reg = ewc()
-    elif REGULARIZATION == 'mas':
-        from Regularizators.mas import mas
-        reg = mas()
-
     value_optimizer.zero_grad()
     v_loss = value_loss(state, q_net1, q_net2, value_net)
     v_loss.backward()
@@ -180,7 +185,7 @@ def train_on_scenario(env, task = 0):
         done = torch.FloatTensor([done])#.to(device)
         action = torch.LongTensor([action])#.to(device)
 
-        if MODEL == 'fc':
+        if MODEL == 'fc':   # flatten the states
             state = state.view(-1)
             next_state = next_state.view(-1)
 
@@ -189,10 +194,24 @@ def train_on_scenario(env, task = 0):
 
         # Replace the above line with logic that checks if enough samples are in the buffer before updating
         if len(replay_buffers[task]) > batch_size:
-            state_batch, action_batch, reward_batch, next_state_batch, done_batch = replay_buffers[task].sample(batch_size)    ### single batch
+            if USE_PER:
+                state_batch, action_batch, reward_batch, next_state_batch, done_batch, indices = replay_buffers[task].sample(batch_size)    ### single batch
+            else:
+                state_batch, action_batch, reward_batch, next_state_batch, done_batch = replay_buffers[task].sample(batch_size)    ### single batch
             #print(state_batch, action_batch, reward_batch, next_state_batch, done_batch)
-            update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task)
+            
+            update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg)
             #update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
+            
+            if USE_PER:
+               with torch.no_grad():
+                 next_value = value_net(next_state_batch)        # target value network
+                 target_q = reward_batch + (1 - done_batch) * next_value
+                 q_values = q_net1(state_batch, head = task)
+                 q_value = q_values.gather(1, action_batch)  
+               td_errors = torch.abs(target_q - q_value).cpu().numpy()#.squeeze()     # temporal difference error between target value and current q value
+               replay_buffers[task].update_priorities(td_errors, indices)
+            
             
             #del state_batch, action_batch, reward_batch, next_state_batch, done_batch   # free up gpu space 
         state = next_state
@@ -228,7 +247,7 @@ else:
         task = 0
         for env in cl_env.tasks:
             for _ in range(2):
-                episode_reward = train_on_scenario(env, task)
+                episode_reward = train_on_scenario(env, task)   # task is a counter only useful for owl to select the correct replay buffer 
                 episodes_reward.append(episode_reward)
                 tot_reward += episode_reward
                 '''
@@ -238,7 +257,7 @@ else:
                 '''
             if 'owl' in MODEL:
                 task += 1
-            print(f"Episode {episode+1}, Reward: {episode_reward}")
+        print(f"Episode {episode+1}, Reward: {episode_reward}")
 
 
 

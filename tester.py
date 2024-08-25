@@ -15,7 +15,7 @@ from bandit import Bandit
 RESOLUTION = '1920x1080'
 RENDER = True       # If render is true, resolution is always 1920x1080 to match my screen
 SEQUENCE =  'Single'        #'Single', 'CO8' : define on which sequence you would like to test 
-SCENARIO = Scenario.PITFALL
+SCENARIO = Scenario.PITFALL 
 
 # SAC type
 MODEL = 'owl conv'
@@ -70,8 +70,7 @@ if SEQUENCE == 'Single':    # train on single scenario
             state = state.view(-1)
             next_state = next_state.view(-1)
 
-        print(action.item())
-
+        #print(action.item())
         state = next_state
         episode_reward += reward.item()
 
