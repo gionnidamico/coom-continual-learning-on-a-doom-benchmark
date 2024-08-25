@@ -20,7 +20,7 @@ SCENARIO = Scenario.PITFALL
 # SAC type
 MODEL = 'owl conv'
 
-SAVE_PATH = 'models/'
+SAVE_PATH = 'models/' # add name
 
 num_heads = 1
 
@@ -35,7 +35,7 @@ if 'fc' in MODEL:
 elif 'conv' in MODEL:
     from SAC.sac_conv import PolicyNetwork
 
-with open(f'{SAVE_PATH}model_{MODEL}.pkl', 'rb') as file:
+with open(f'{SAVE_PATH}model.pkl', 'rb') as file:
     model = pickle.load(file)
     model.eval()
 

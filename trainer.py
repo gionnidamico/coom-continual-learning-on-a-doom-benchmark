@@ -12,30 +12,56 @@ from COOM.env.continual import ContinualLearningEnv
 from COOM.utils.config import Sequence
 
 import pickle
+import argparse
+
+############################################################################
+'TRAINING CONFIGURATION'
+############################################################################
 
 # use gpu
 device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
-# SAC type
-MODEL = 'owl conv'
+parser = argparse.ArgumentParser(description="SAC Training Configuration")
 
-SAVE_PATH = 'models/'
+# Model and Save Path
+parser.add_argument('--model', type=str, default='conv', help="Model type")
+parser.add_argument('--path', type=str, default='models/', help="Path to save the trained models")
+
+# Training Config
+parser.add_argument('--resolution', type=str, default='160X120', choices=['160X120', '1920X1080'], help="Screen resolution")
+parser.add_argument('--render', type=bool, default=False, choices=[True, False], help="Render the environment")
+parser.add_argument('--sequence', type=str, default='CO8', choices=['None', 'CO4', 'CO8', 'COC'], help="Sequence type")
+parser.add_argument('--scenario', type=str, default='PITFALL', choices=['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING'], help="Scenario to run")
+
+# Regularization and PER
+parser.add_argument('--reg', type=str, default='None', choices=['None','ewc', 'mas'], help="Type of regularization to use")
+parser.add_argument('--use_per', type=bool, default=False, choices=[True, False], help="Use Prioritized Experience Replay (PER) Buffer")
+
+# Training Parameters
+parser.add_argument('--episodes', type=int, default=3, help="Number of episodes for training")
+
+args = parser.parse_args()
+
+# SAC type and path
+MODEL = args.model
+SAVE_PATH = args.path + args.model  # creates a folder for each model trained
 
 # train config
-RESOLUTION = '160X120'
-RENDER = False       # If render is true, resolution is always 1920x1080 to match my screen
-SEQUENCE = Sequence.CO8  #'Single' #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
-SCENARIO = Scenario.PITFALL
-
-REGULARIZATION = 'mas'
-USE_PER = True # if false, use the vanilla Replay Buffer instead
+RESOLUTION = args.resolution
+RENDER = args.render       # If render is true, resolution is always 1920x1080 to match my screen
+SEQUENCE = None if args.sequence=='None' else eval(f'Sequence.{args.sequence}')  #'Single' #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
+SCENARIO = eval(f'Scenario.{args.scenario}')
 
 # train params
-num_episodes = 3
-gamma = 0.99
+EPISODES = 3
+REGULARIZATION = None if args.reg=='None' else args.reg
+USE_PER = args.use_per # if false, use the vanilla Replay Buffer instead
 
-# the SAC Algorithm
+
+################################################################################
+'SAC Algorithm'
+################################################################################
 
 # Initialize Networks and Optimizers
 hidden_dim = 256
@@ -82,7 +108,9 @@ value_optimizer = optim.Adam(value_net.parameters(), lr=1e-4)
 q_optimizer1 = optim.Adam(q_net1.parameters(), lr=1e-4)
 q_optimizer2 = optim.Adam(q_net2.parameters(), lr=1e-4)
 policy_optimizer = optim.Adam(policy_net.parameters(), lr=1e-4)
-
+    
+# discount
+gamma = 0.99
 
 # Define the Loss Functions
 def value_loss(state, q_net1, q_net2, value_net):
@@ -231,9 +259,9 @@ print("\nTraining STARTING...")
 
 episodes_reward = []
 
-if SEQUENCE == 'Single':    # train on single scenario
+if SEQUENCE == None:    # train on single scenario
     env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
-    for episode in range(num_episodes):
+    for episode in range(EPISODES):
         episode_reward = train_on_scenario(env, task = 0)
         episodes_reward.append(episode_reward)
         print(f"Episode {episode+1}, Reward: {episode_reward}")
@@ -243,7 +271,7 @@ else:
     done = False
     tot_reward = 0
     cl_env = ContinualLearningEnv(SEQUENCE)
-    for episode in range(num_episodes):
+    for episode in range(EPISODES):
         task = 0
         for env in cl_env.tasks:
             for _ in range(2):
@@ -263,5 +291,5 @@ else:
 
 
 # Save the trained model in a file
-with open(f'{SAVE_PATH}model_{MODEL}.pkl', 'wb') as file:
+with open(f'{SAVE_PATH}model.pkl', 'wb') as file:
     pickle.dump(policy_net, file)
