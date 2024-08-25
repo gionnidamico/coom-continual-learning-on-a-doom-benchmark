@@ -4,6 +4,7 @@ import numpy as np
 from gymnasium import RewardWrapper
 from vizdoom import GameVariable
 
+### BIG CHANGE: To suppress wrapper warnings, an 'ignore' was added where "Wrapper" classes are called in this file
 
 class WrapperHolder:
     """
@@ -39,7 +40,7 @@ class BooleanVariableRewardWrapper(RewardWrapper):
         self.game_var = game_var
 
     def reward(self, reward):
-        game_variable = self.env.game.get_game_variable(self.game_var)
+        game_variable = self.env.get_wrapper_attr('game').get_game_variable(self.game_var)
         if game_variable:
             reward += self.rew
         return reward
@@ -58,10 +59,10 @@ class GameVariableRewardWrapper(RewardWrapper):
         self.decrease = decrease
 
     def reward(self, reward):
-        if len(self.game_variable_buffer) < 2:
+        if len(self.unwrapped.game_variable_buffer) < 2:
             return reward
-        vars_cur = self.game_variable_buffer[-1]
-        vars_prev = self.game_variable_buffer[-2]
+        vars_cur = self.unwrapped.game_variable_buffer[-1]
+        vars_prev = self.unwrapped.game_variable_buffer[-2]
 
         var_cur = vars_cur[self.var_index]
         var_prev = vars_prev[self.var_index]
@@ -86,10 +87,10 @@ class CumulativeVariableRewardWrapper(RewardWrapper):
         self.cum_rew = 0
 
     def reward(self, reward):
-        if len(self.game_variable_buffer) < 2:
+        if len(self.unwrapped.game_variable_buffer) < 2:
             return reward
-        vars_cur = self.game_variable_buffer[-1]
-        vars_prev = self.game_variable_buffer[-2]
+        vars_cur = self.unwrapped.game_variable_buffer[-1]
+        vars_prev = self.unwrapped.game_variable_buffer[-2]
 
         var_cur = vars_cur[self.var_index]
         var_prev = vars_prev[self.var_index]
@@ -116,12 +117,12 @@ class ProportionalVariableRewardWrapper(RewardWrapper):
         self.lower_bound = -np.inf
 
     def reward(self, reward):
-        if len(self.game_variable_buffer) < 2:
+        if len(self.unwrapped.game_variable_buffer) < 2:
             self.lower_bound = -np.inf
             return reward
 
-        var_cur = self.game_variable_buffer[-1][self.var_index]
-        var_prev = self.game_variable_buffer[-2][self.var_index]
+        var_cur = self.unwrapped.game_variable_buffer[-1][self.var_index]
+        var_prev = self.unwrapped.game_variable_buffer[-2][self.var_index]
 
         if not self.keep_lb or self.keep_lb and var_cur > self.lower_bound:
             reward = self.scaler * (var_cur - var_prev)
@@ -144,8 +145,8 @@ class UserVariableRewardWrapper(RewardWrapper):
         self.update_callback = update_callback
 
     def reward(self, reward):
-        var_cur = self.game.get_game_variable(self.game_var)
-        var_prev = self.get_and_update_user_var(self.game_var)
+        var_cur = self.env.get_wrapper_attr('game').get_game_variable(self.game_var)
+        var_prev = self.unwrapped.get_and_update_user_var(self.game_var)
 
         if not self.decrease and var_cur > var_prev or self.decrease and var_cur < var_prev:
             reward += self.rew
@@ -163,9 +164,9 @@ class MovementRewardWrapper(RewardWrapper):
         self.scaler = scaler
 
     def reward(self, reward):
-        if len(self.distance_buffer) < 2:
+        if len(self.unwrapped.distance_buffer) < 2:
             return reward
-        distance = self.distance_buffer[-1]
+        distance = self.unwrapped.distance_buffer[-1]
         reward += distance * self.scaler  # Increase the reward for movement linearly
         return reward
 
@@ -184,11 +185,11 @@ class LocationVariableRewardWrapper(RewardWrapper):
         self.y_start = y_start
 
     def reward(self, reward):
-        if len(self.game_variable_buffer) < 2:
+        if len(self.unwrapped.game_variable_buffer) < 2:
             return reward
 
-        vars_cur = self.game_variable_buffer[-1]
-        vars_prev = self.game_variable_buffer[-2]
+        vars_cur = self.unwrapped.game_variable_buffer[-1]
+        vars_prev = self.unwrapped.game_variable_buffer[-2]
 
         x_cur = vars_cur[self.x_index]
         y_cur = vars_cur[self.y_index]
@@ -212,12 +213,12 @@ class PlatformReachedRewardWrapper(RewardWrapper):
         self.rew = reward
 
     def reward(self, reward):
-        if len(self.game_variable_buffer) < 2:
+        if len(self.unwrapped.game_variable_buffer) < 2:
             return reward
-        vars_cur = self.game_variable_buffer[-1]
+        vars_cur = self.unwrapped.game_variable_buffer[-1]
 
         height_cur = vars_cur[self.z_var_index]
-        heights_prev = [game_vars[self.z_var_index] for game_vars in self.game_variable_buffer]
+        heights_prev = [game_vars[self.z_var_index] for game_vars in self.unwrapped.game_variable_buffer]
 
         # Check whether the agent was on lava in the last n frames and is now on a platform
         if height_cur > max(heights_prev[:-1]):
@@ -238,7 +239,7 @@ class GoalRewardWrapper(RewardWrapper):
         self.var_index = var_index
 
     def reward(self, reward):
-        vars_cur = self.game_variable_buffer[-1]
+        vars_cur = self.unwrapped.game_variable_buffer[-1]
         var_cur = vars_cur[self.var_index]
 
         if var_cur > self.goal:

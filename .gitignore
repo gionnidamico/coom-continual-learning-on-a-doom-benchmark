@@ -1,8 +1,4 @@
 desktop.ini
 _vizdoom.ini
-model_test.pkl
-model_conv.pkl
-model.pkl
 __pycache__
-models/model_fc.pkl
-models/model_conv(first).pkl
+
