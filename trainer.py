@@ -2,6 +2,7 @@ from statistics import mean
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
+import os
 
 import numpy as np
 
@@ -28,7 +29,7 @@ parser = argparse.ArgumentParser(description="SAC Training Configuration")
 parser.add_argument('--model', type=str, default='conv', help="Model type")
 parser.add_argument('--path', type=str, default='models/', help="Path to save the trained models")
 
-# Training Config
+# Environment Config
 parser.add_argument('--resolution', type=str, default='160X120', choices=['160X120', '1920X1080'], help="Screen resolution")
 parser.add_argument('--render', type=bool, default=False, choices=[True, False], help="Render the environment")
 parser.add_argument('--sequence', type=str, default='CO8', choices=['None', 'CO4', 'CO8', 'COC'], help="Sequence type")
@@ -37,6 +38,7 @@ parser.add_argument('--scenario', type=str, default='PITFALL', choices=['PITFALL
 # Regularization and PER
 parser.add_argument('--reg', type=str, default='None', choices=['None','ewc', 'mas'], help="Type of regularization to use")
 parser.add_argument('--use_per', type=bool, default=False, choices=[True, False], help="Use Prioritized Experience Replay (PER) Buffer")
+parser.add_argument('--use_multy_per', type=bool, default=True, choices=[True, False], help="Use one Experience Replay Buffer per head")
 
 # Training Parameters
 parser.add_argument('--episodes', type=int, default=3, help="Number of episodes for training")
@@ -45,7 +47,9 @@ args = parser.parse_args()
 
 # SAC type and path
 MODEL = args.model
-SAVE_PATH = args.path + args.model  # creates a folder for each model trained
+SAVE_PATH = os.path.join(args.path, args.model + args.sequence)  # creates a folder for each model trained
+if not os.path.isdir(SAVE_PATH):
+    os.mkdir(SAVE_PATH)
 
 # train config
 RESOLUTION = args.resolution
@@ -54,7 +58,7 @@ SEQUENCE = None if args.sequence=='None' else eval(f'Sequence.{args.sequence}') 
 SCENARIO = eval(f'Scenario.{args.scenario}')
 
 # train params
-EPISODES = 3
+EPISODES = args.episodes
 REGULARIZATION = None if args.reg=='None' else args.reg
 USE_PER = args.use_per # if false, use the vanilla Replay Buffer instead
 
@@ -90,13 +94,18 @@ elif REGULARIZATION == 'mas':
     from Regularizators.mas import mas
     reg = mas()
 
+if args.use_multy_per:
+    num_PER = num_heads
+else:
+    num_PER = 1
+
 # Choose the replay buffer to use
 if USE_PER:
     from ReplayBuffers.prioritized_RB import PrioritizedReplayBuffer
-    replay_buffers = [PrioritizedReplayBuffer(capacity=1000, device=device) for _ in range(num_heads)]
+    replay_buffers = [PrioritizedReplayBuffer(capacity=1000, device=device) for _ in range(num_PER)]
 else:
     from ReplayBuffers.replay_buffer import ReplayBuffer
-    replay_buffers = [ReplayBuffer(capacity=1000, device=device) for _ in range(num_heads)]
+    replay_buffers = [ReplayBuffer(capacity=1000, device=device) for _ in range(num_PER)]
 
 # Define the networks to use and the optimizers
 value_net = ValueNetwork(state_dim, hidden_dim).to(device)
@@ -291,5 +300,5 @@ else:
 
 
 # Save the trained model in a file
-with open(f'{SAVE_PATH}model.pkl', 'wb') as file:
+with open(f'{SAVE_PATH}/model.pkl', 'wb') as file:
     pickle.dump(policy_net, file)
