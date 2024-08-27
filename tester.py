@@ -9,18 +9,34 @@ from COOM.utils.config import Scenario
 from COOM.env.continual import ContinualLearningEnv
 from COOM.utils.config import Sequence
 
+import os
+import argparse
+
 from bandit import Bandit
 
+parser = argparse.ArgumentParser(description="SAC Training Configuration")
+
+# Environment Config
+parser.add_argument('--resolution', type=str, default='160X120', choices=['160X120', '1920X1080'], help="Screen resolution")
+parser.add_argument('--render', type=bool, default=False, choices=[True, False], help="Render the environment")
+parser.add_argument('--sequence', type=str, default='CO8', choices=['None', 'CO4', 'CO8', 'COC'], help="Sequence type")
+parser.add_argument('--scenario', type=str, default='PITFALL', choices=['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING'], help="Scenario to run")
+
+# Model and Save Path
+parser.add_argument('--model', type=str, default='conv', help="Model type")
+parser.add_argument('--path', type=str, default='models/', help="Path to save the trained models")
+
+args = parser.parse_args()
+
 # Test mode
-RESOLUTION = '1920x1080'
-RENDER = True       # If render is true, resolution is always 1920x1080 to match my screen
-SEQUENCE =  'Single'        #'Single', 'CO8' : define on which sequence you would like to test 
-SCENARIO = Scenario.PITFALL 
+RESOLUTION = args.resolution
+RENDER = args.render       # If render is true, resolution is always 1920x1080 to match my screen
+SEQUENCE = None if args.sequence=='None' else eval(f'Sequence.{args.sequence}')  #'Single' #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
+SCENARIO = eval(f'Scenario.{args.scenario}')
 
 # SAC type
-MODEL = 'owl conv'
-
-SAVE_PATH = 'models/' # add name
+MODEL = args.model
+SAVE_PATH = os.path.join(args.path, '/'+args.model + args.sequence)  # creates a folder for each model trained
 
 num_heads = 1
 

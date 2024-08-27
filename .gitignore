@@ -2,3 +2,10 @@ desktop.ini
 _vizdoom.ini
 __pycache__
 
+models/convCO8model.pkl
+models/convmodel.pkl
+models/model_conv(first).pkl
+models/model_fc.pkl
+models/convCO8/model.pkl
+model_conv.pkl
+model_test.pkl
