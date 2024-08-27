@@ -13,6 +13,8 @@ from COOM.utils.config import Sequence
 
 import pickle
 import argparse
+from datetime import datetime
+import os
 
 ############################################################################
 'TRAINING CONFIGURATION'
@@ -43,9 +45,13 @@ parser.add_argument('--episodes', type=int, default=3, help="Number of episodes 
 
 args = parser.parse_args()
 
+# Clear cache
+torch.cuda.empty_cache()
+
 # SAC type and path
-MODEL = args.model
-SAVE_PATH = args.path + args.model  # creates a folder for each model trained
+MODEL_NAME = args.model
+SAVE_PATH = args.path + '/'+datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '_'+args.model+'_'+args.reg + '/' # creates a folder for each model trained
+os.makedirs(SAVE_PATH, exist_ok=True)
 
 # train config
 RESOLUTION = args.resolution
@@ -54,9 +60,23 @@ SEQUENCE = None if args.sequence=='None' else eval(f'Sequence.{args.sequence}') 
 SCENARIO = eval(f'Scenario.{args.scenario}')
 
 # train params
-EPISODES = 3
+EPISODES = args.episodes
 REGULARIZATION = None if args.reg=='None' else args.reg
 USE_PER = args.use_per # if false, use the vanilla Replay Buffer instead
+
+# Plots loss/rewards over time and saves the plot as a PNG file 
+import matplotlib.pyplot as plt
+def plot_and_save(time_serie, title, label_name, path):
+    print(time_serie)
+    plt.figure(figsize=(10, 6))
+    plt.plot(time_serie, label=label_name)
+    plt.title(title)
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(path)
+    plt.close()
 
 
 ################################################################################
@@ -70,14 +90,14 @@ num_heads = 1
 num_actions = 12  # Example number of actions
 
 # Choose the model to use
-if 'fc' in MODEL:
+if 'fc' in MODEL_NAME:
     from SAC.sac_fc import ValueNetwork, QNetwork, PolicyNetwork
     state_dim = 4*84*84*3  # Example state dimension
-elif 'conv' in MODEL:
+elif 'conv' in MODEL_NAME:
     from SAC.sac_conv import ValueNetwork, QNetwork, PolicyNetwork
     num_channels = 3
     state_dim = num_channels  # Example state dimension
-if 'owl' in MODEL:
+if 'owl' in MODEL_NAME:
     from SAC.sac_conv import ValueNetwork, QNetwork, PolicyNetwork
     num_heads = 8
 
@@ -153,11 +173,7 @@ def policy_loss(state, q_net, policy_net, reg, task):
     reg_weights = 0 #if no reg then no weight
     if reg:
         reg_weights = reg.get_weight_policy(probs, policy_net)
-    '''
-    print("policy")
-    print("loss:",policy_loss)
-    print("reg:",reg_weights)
-    '''
+
     return policy_loss + reg_weights
 
 
@@ -191,6 +207,8 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
     p_loss.backward()
     policy_optimizer.step()
 
+    return p_loss
+
 
 
 
@@ -199,8 +217,12 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
 
 # Train on a scenario until the end
 def train_on_scenario(env, task = 0):
-    state, _ = env.reset()
+    
     episode_reward = 0
+    episode_policyloss = 0
+    policy_loss = 0
+
+    state, _ = env.reset()
     done = False
     state = torch.FloatTensor(np.array(state))#.to(device)   # [1, 4, 84, 84, 3]
 
@@ -213,7 +235,7 @@ def train_on_scenario(env, task = 0):
         done = torch.FloatTensor([done])#.to(device)
         action = torch.LongTensor([action])#.to(device)
 
-        if MODEL == 'fc':   # flatten the states
+        if MODEL_NAME == 'fc':   # flatten the states
             state = state.view(-1)
             next_state = next_state.view(-1)
 
@@ -228,7 +250,7 @@ def train_on_scenario(env, task = 0):
                 state_batch, action_batch, reward_batch, next_state_batch, done_batch = replay_buffers[task].sample(batch_size)    ### single batch
             #print(state_batch, action_batch, reward_batch, next_state_batch, done_batch)
             
-            update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg)
+            policy_loss = update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg)
             #update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
             
             if USE_PER:
@@ -244,26 +266,28 @@ def train_on_scenario(env, task = 0):
             #del state_batch, action_batch, reward_batch, next_state_batch, done_batch   # free up gpu space 
         state = next_state
         episode_reward += reward.item()
+        episode_policyloss += policy_loss
 
 
-    return episode_reward
+    return episode_reward, episode_policyloss
 
 
 
 ###############################################################################
 print("\nTraining STARTING...")
-
-
+###############################################################################
 # choose between 'SINGLE' and 'SEQUENCE'
 
-
 episodes_reward = []
+episodes_policyloss = []
+
 
 if SEQUENCE == None:    # train on single scenario
     env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
     for episode in range(EPISODES):
-        episode_reward = train_on_scenario(env, task = 0)
+        episode_reward, episode_policyloss = train_on_scenario(env, task = 0)
         episodes_reward.append(episode_reward)
+        episodes_policyloss.append(episode_policyloss if type(episode_policyloss) == int else episode_policyloss.cpu().detach())
         print(f"Episode {episode+1}, Reward: {episode_reward}")
 
 
@@ -275,21 +299,31 @@ else:
         task = 0
         for env in cl_env.tasks:
             for _ in range(2):
-                episode_reward = train_on_scenario(env, task)   # task is a counter only useful for owl to select the correct replay buffer 
+                episode_reward, episode_policyloss = train_on_scenario(env, task)   # task is a counter only useful for owl to select the correct replay buffer 
                 episodes_reward.append(episode_reward)
+                episodes_policyloss.append(episode_policyloss)
                 tot_reward += episode_reward
                 '''
                 if 'owl' in MODEL: # this is to empty the buffer when switching head 
                     # we could create RP for each task not to lose experience (maybe we could use the priority for that)
                     replay_buffer = ReplayBuffer(capacity=1000000, device=device)
                 '''
-            if 'owl' in MODEL:
+            if 'owl' in MODEL_NAME:
                 task += 1
         print(f"Episode {episode+1}, Reward: {episode_reward}")
 
 
 
 
-# Save the trained model in a file
+# Save the trained model in a file, with plots and parameters
 with open(f'{SAVE_PATH}model.pkl', 'wb') as file:
     pickle.dump(policy_net, file)
+
+plot_and_save(episodes_reward, f'Training of {MODEL_NAME} - Reward', 'Reward', f'{SAVE_PATH}reward.png')
+plot_and_save(np.array(episodes_policyloss), f'Training of {MODEL_NAME} - Policy Loss', 'Reward', f'{SAVE_PATH}policyloss.png')
+
+
+# save parameters on file
+with open(f'{SAVE_PATH}params.txt', 'w') as file:
+    for key, value in vars(args).items():
+        file.write(f'{key}: {value}\n')
