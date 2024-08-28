@@ -20,6 +20,8 @@ class ewc():
             fisher = q_g**2
             reg_weights.append(self.lambdaq * torch.mean(fisher, dim=0))
 
+        del jacobianqs
+
         return torch.sum(torch.stack(reg_weights, dim = 0))
 
     def get_weight_policy(self, probs, policynet):
@@ -39,5 +41,7 @@ class ewc():
 
             fisher = torch.clamp(fisher, min=1e-5)
             reg_weights.append(self.lambdaq * torch.mean(fisher, dim=0))
+
+        del jacobianpolicys
 
         return torch.sum(torch.stack(reg_weights, dim = 0))

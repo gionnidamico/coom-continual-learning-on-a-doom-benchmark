@@ -9,3 +9,11 @@ models/model_fc.pkl
 models/convCO8/model.pkl
 model_conv.pkl
 model_test.pkl
+models/2024-08-28_10-33-25_owl_conv_None/model.pkl
+models/2024-08-28_10-33-25_owl_conv_None/params.txt
+models/2024-08-28_10-33-25_owl_conv_None/policyloss.png
+models/2024-08-28_10-33-25_owl_conv_None/reward.png
+models/2024-08-28_10-37-25_owl_conv_mas/model.pkl
+models/2024-08-28_10-37-25_owl_conv_mas/params.txt
+models/2024-08-28_10-37-25_owl_conv_mas/policyloss.png
+models/2024-08-28_10-37-25_owl_conv_mas/reward.png

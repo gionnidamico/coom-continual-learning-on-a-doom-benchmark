@@ -18,6 +18,8 @@ class mas():
             jacobianqs.append(jacobianq.flatten()**2)
         for q_g in jacobianqs:
             reg_weights.append(self.lambdaq * torch.mean(torch.abs(q_g), dim=0))
+        
+        del jacobianqs
 
         return torch.sum(torch.stack(reg_weights, dim = 0))
 
@@ -35,5 +37,7 @@ class mas():
 
         for gs in jacobianpolicys:
             reg_weights.append(self.lambdaq * torch.mean(torch.abs(gs), dim=0))
+
+        del jacobianpolicys
 
         return torch.sum(torch.stack(reg_weights, dim = 0))

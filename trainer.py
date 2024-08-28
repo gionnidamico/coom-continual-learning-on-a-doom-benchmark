@@ -214,7 +214,7 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
     p_loss.backward()
     policy_optimizer.step()
 
-    return p_loss
+    return p_loss.detach().cpu()
 
 
 
