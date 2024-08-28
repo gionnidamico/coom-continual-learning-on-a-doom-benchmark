@@ -51,7 +51,7 @@ if 'fc' in MODEL:
 elif 'conv' in MODEL:
     from SAC.sac_conv import PolicyNetwork
 
-with open(f'{SAVE_PATH}model.pkl', 'rb') as file:
+with open(f'{SAVE_PATH}/model.pkl', 'rb') as file:
     model = pickle.load(file)
     model.eval()
 
