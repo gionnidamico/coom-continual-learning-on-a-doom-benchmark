@@ -23,7 +23,7 @@ class ValueNetwork(nn.Module):
 
 # The QNetwork estimates the Q-value 𝑄(𝑠,𝑎) for each action.
 class QNetwork(nn.Module):
-    def __init__(self, state_dim, num_actions, hidden_dim):
+    def __init__(self, state_dim, num_actions, hidden_dim, n_head = 1, init_w=3e-3):
         super(QNetwork, self).__init__()
         self.fc1 = nn.Linear(state_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
@@ -39,7 +39,7 @@ class QNetwork(nn.Module):
 
 # The PolicyNetwork outputs a probability distribution over actions.
 class PolicyNetwork(nn.Module):
-    def __init__(self, state_dim, num_actions, hidden_dim):
+    def __init__(self, state_dim, num_actions, hidden_dim, n_head = 1, init_w=3e-3):
         super(PolicyNetwork, self).__init__()
         self.fc1 = nn.Linear(state_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
