@@ -41,6 +41,7 @@ parser.add_argument('--scenario', type=str, default='PITFALL', choices=['PITFALL
 parser.add_argument('--reg', type=str, default='None', choices=['None','ewc', 'mas'], help="Type of regularization to use")
 parser.add_argument('--use_per', type=bool, default=False, choices=[True, False], help="Use Prioritized Experience Replay (PER) Buffer")
 parser.add_argument('--use_multy_per', type=bool, default=True, choices=[True, False], help="Use one Experience Replay Buffer per head")
+parser.add_argument('--size_rb', type=int, default=1000, help="size of Experience Replay Buffer")
 
 # Training Parameters
 parser.add_argument('--episodes', type=int, default=3, help="Number of episodes for training")
@@ -120,10 +121,10 @@ else:
 # Choose the replay buffer to use
 if USE_PER:
     from ReplayBuffers.prioritized_RB import PrioritizedReplayBuffer
-    replay_buffers = [PrioritizedReplayBuffer(capacity=1000, device=device) for _ in range(num_PER)]
+    replay_buffers = [PrioritizedReplayBuffer(capacity=args.size_rb, device=device) for _ in range(num_PER)]
 else:
     from ReplayBuffers.replay_buffer import ReplayBuffer
-    replay_buffers = [ReplayBuffer(capacity=1000, device=device) for _ in range(num_PER)]
+    replay_buffers = [ReplayBuffer(capacity=args.size_rb, device=device) for _ in range(num_PER)]
 
 # Define the networks to use and the optimizers
 value_net = ValueNetwork(state_dim, hidden_dim).to(device)
