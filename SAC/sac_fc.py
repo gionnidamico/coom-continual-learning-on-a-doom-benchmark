@@ -29,7 +29,7 @@ class QNetwork(nn.Module):
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.out = nn.Linear(hidden_dim, num_actions)
 
-    def forward(self, state):
+    def forward(self, state, head = 0):
         #state_flattened = state.view(state.size(0), -1)  # [batch_size, 4*84*84*3]
         state_flattened = state
         x = F.relu(self.fc1(state_flattened))
