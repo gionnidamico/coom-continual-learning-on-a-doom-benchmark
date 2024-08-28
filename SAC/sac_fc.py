@@ -45,7 +45,7 @@ class PolicyNetwork(nn.Module):
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.out = nn.Linear(hidden_dim, num_actions)
 
-    def forward(self, state, batched=True):
+    def forward(self, state, batched=True, head = 0):
         if batched:
             #state_flattened = state.view(state.size(0), -1)  # [batch_size, 4*84*843]
             state_flattened = state
@@ -60,7 +60,7 @@ class PolicyNetwork(nn.Module):
     
 
         # when training we are in stochastic mode to explore, when training we don't sample from the distribution
-    def sample_action(self, state, batched=True, deterministic=True):       # batched is ignored in conv version because there is no flatten() in input to consider
+    def sample_action(self, state, task, batched=True, deterministic=True):       # batched is ignored in conv version because there is no flatten() in input to consider
         # if not batched:
         #     state = state.unsqueeze(0)
         # Flatten the state to fit in fully connected network
