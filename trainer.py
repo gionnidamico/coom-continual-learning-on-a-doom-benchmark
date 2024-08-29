@@ -45,6 +45,8 @@ parser.add_argument('--size_rb', type=int, default=1000, help="size of Experienc
 
 # Training Parameters
 parser.add_argument('--episodes', type=int, default=3, help="Number of episodes for training")
+parser.add_argument('--gamma', type=float, default=0.99, help="Discount factor")
+parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate for networks and optimizers")
 
 args = parser.parse_args()
 
@@ -66,6 +68,8 @@ SCENARIO = eval(f'Scenario.{args.scenario}')
 EPISODES = args.episodes
 REGULARIZATION = None if args.reg=='None' else args.reg
 USE_PER = args.use_per # if false, use the vanilla Replay Buffer instead
+GAMMA = args.gamma
+LEARNING_RATE = args.lr
 
 # Plots loss/rewards over time and saves the plot as a PNG file 
 import matplotlib.pyplot as plt
@@ -132,13 +136,10 @@ q_net1 = QNetwork(state_dim, num_actions, hidden_dim, n_head = num_heads).to(dev
 q_net2 = QNetwork(state_dim, num_actions, hidden_dim, n_head = num_heads).to(device)
 policy_net = PolicyNetwork(state_dim, num_actions, hidden_dim, n_head = num_heads).to(device)
 
-value_optimizer = optim.Adam(value_net.parameters(), lr=1e-4)
-q_optimizer1 = optim.Adam(q_net1.parameters(), lr=1e-4)
-q_optimizer2 = optim.Adam(q_net2.parameters(), lr=1e-4)
-policy_optimizer = optim.Adam(policy_net.parameters(), lr=1e-4)
-    
-# discount
-gamma = 0.99
+value_optimizer = optim.Adam(value_net.parameters(), lr=LEARNING_RATE)
+q_optimizer1 = optim.Adam(q_net1.parameters(), lr=LEARNING_RATE)
+q_optimizer2 = optim.Adam(q_net2.parameters(), lr=LEARNING_RATE)
+policy_optimizer = optim.Adam(policy_net.parameters(), lr=LEARNING_RATE)
 
 # Define the Loss Functions
 def value_loss(state, q_net1, q_net2, value_net):
@@ -153,10 +154,10 @@ def value_loss(state, q_net1, q_net2, value_net):
     #print(f"values:{value.shape}, {next_value.shape}")
     return F.mse_loss(value, next_value)
 
-def q_loss(state, action, reward, next_state, done, q_net, target_value_net, reg, task):
+def q_loss(state, action, reward, next_state, done, gamma, q_net, target_value_net, reg, task):
     with torch.no_grad():
         next_value = target_value_net(next_state)
-        target_q = reward + (1 - done) * next_value
+        target_q = reward + gamma * (1 - done) * next_value
     q_values = q_net(state, head = task)
     q_value = q_values.gather(1, action)   # get the Nth q_value that corresponds to the action taken (second dimension of action tensor)
     #print(f"q_values shape: {q_value.shape}, {target_q.shape}")
@@ -186,7 +187,7 @@ def policy_loss(state, q_net, policy_net, reg, task):
 
 
 # Training Step
-def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg=None):
+def update(state, action, reward, next_state, done, gamma, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg=None):
     
     # Flatten the state to fit in fully connected network
     #state_array = np.array(state)
@@ -202,8 +203,8 @@ def update(state, action, reward, next_state, done, value_net, q_net1, q_net2, p
     # Update Q Networks
     q_optimizer1.zero_grad()
     q_optimizer2.zero_grad()
-    q_loss1 = q_loss(state, action, reward, next_state, done, q_net1, value_net, reg, task)
-    q_loss2 = q_loss(state, action, reward, next_state, done, q_net2, value_net, reg, task)
+    q_loss1 = q_loss(state, action, reward, next_state, done, gamma, q_net1, value_net, reg, task)
+    q_loss2 = q_loss(state, action, reward, next_state, done, gamma, q_net2, value_net, reg, task)
     q_loss1.backward()
     q_loss2.backward()
     q_optimizer1.step()
@@ -258,7 +259,7 @@ def train_on_scenario(env, task = 0):
                 state_batch, action_batch, reward_batch, next_state_batch, done_batch = replay_buffers[task].sample(batch_size)    ### single batch
             #print(state_batch, action_batch, reward_batch, next_state_batch, done_batch)
             
-            policy_loss = update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg)
+            policy_loss = update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, GAMMA, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg)
             #update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
             
             if USE_PER:
