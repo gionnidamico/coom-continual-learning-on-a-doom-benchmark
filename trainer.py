@@ -105,7 +105,6 @@ elif 'conv' in MODEL_NAME:
     num_channels = 3
     state_dim = num_channels  # Example state dimension
 if 'owl' in MODEL_NAME:
-    from SAC.sac_conv import ValueNetwork, QNetwork, PolicyNetwork
     num_heads = 8
 
 # Choose the regularizator if one is chosen
