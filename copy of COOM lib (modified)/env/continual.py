@@ -41,9 +41,11 @@ class ContinualLearningEnv(BaseEnv):
                  scenario_config: List[Dict[str, any]] = None,
                  doom_config: Dict[str, any] = None,
                  wrapper_config: Dict[str, any] = None,
+                 render: bool = False,              ### ADDED BY ME
+                 resolution: str = '160X120',       ### ADDED BY ME
                  ):
         self.steps_per_env = steps_per_env
-        self.envs = make_sequence(sequence, random_order, scenario_config, doom_config, wrapper_config)
+        self.envs = make_sequence(sequence, random_order, scenario_config, doom_config, wrapper_config,render=render, resolution=resolution)      ### MODIFIED )
         self._num_tasks = len(self.envs)
         self.steps = steps_per_env * self.num_tasks
         self.cur_seq_idx = start_from
@@ -104,8 +106,8 @@ class ContinualLearningEnv(BaseEnv):
 
         return obs, reward, done, truncated, info
 
-    def render(self, mode="rgb_array"):
-        self.get_active_env().render(mode)
+    # def render(self, mode="rgb_array"):       ### removed and added same mode for single and sequence envs
+    #     self.get_active_env().render(mode)
 
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None, ) -> Tuple[Union[ndarray, ndarray],
                                                                                               Dict[str, Any]]:

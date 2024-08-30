@@ -14,7 +14,10 @@ def make_sequence(sequence: Sequence,
                   scenarios_kwargs: List[Dict[str, any]] = None,
                   doom_kwargs: Dict[str, any] = None,
                   wrapper_config: Dict[str, any] = None,
-                  task_idx: int = None) -> List[DoomEnv]:
+                  task_idx: int = None,
+                  render: bool = False,              ### ADDED BY ME
+                  resolution: str = '160X120',       ### ADDED BY ME
+                  ) -> List[DoomEnv]:
     """
     Creates a list of Doom environments based on the given sequence configuration.
 
@@ -33,7 +36,7 @@ def make_sequence(sequence: Sequence,
     # Retrieve scenarios and tasks based on the sequence
     scenarios = sequence_scenarios[sequence]
     tasks = sequence_tasks[sequence]
-    return make_envs(scenarios, tasks, random_order, task_idx, scenarios_kwargs, doom_kwargs, wrapper_config)
+    return make_envs(scenarios, tasks, random_order, task_idx, scenarios_kwargs, doom_kwargs, wrapper_config, render=render, resolution=resolution)      ### MODIFIED )
 
 
 def make_envs(scenarios: List[Scenario],
@@ -42,7 +45,10 @@ def make_envs(scenarios: List[Scenario],
               task_idx: int = None,
               scenarios_kwargs: List[Dict[str, any]] = None,
               doom_kwargs: Dict[str, any] = None,
-              wrapper_config: Dict[str, any] = None) -> List[DoomEnv]:
+              wrapper_config: Dict[str, any] = None,
+              render: bool = False,              ### ADDED BY ME
+              resolution: str = '160X120',       ### ADDED BY ME
+              ) -> List[DoomEnv]:
 
     # Optionally shuffle scenarios and tasks for randomization
     if random_order:
@@ -63,7 +69,7 @@ def make_envs(scenarios: List[Scenario],
         task = pair[1]
         scenario = scenario_and_kwargs[0]
         scenario_kwargs = scenario_and_kwargs[1]
-        env = make_env(scenario, task, task_id, scenario_kwargs, doom_kwargs, wrapper_config)
+        env = make_env(scenario, task, task_id, scenario_kwargs, doom_kwargs, wrapper_config, render=render, resolution=resolution)      ### MODIFIED 
         envs.append(env)
     return envs
 
@@ -71,11 +77,13 @@ def make_envs(scenarios: List[Scenario],
 def make_env(scenario: Scenario,
              task: str = 'default',
              task_idx: int = 0,
-             render: bool = False,              ### ADDED BY ME
-             resolution: str = '160X120',       ### ADDED BY ME
              scenario_kwargs: Dict[str, any] = None,
              doom_kwargs: Dict[str, any] = None,
-             wrapper_config: Dict[str, any] = None) -> DoomEnv:
+             wrapper_config: Dict[str, any] = None, 
+             render: bool = False,                           ### ADDED BY ME
+             resolution: str = '160X120'                     ### ADDED BY ME
+             )   -> DoomEnv:     
+           
     """
     Creates a single Doom environment instance with specified configurations.
 

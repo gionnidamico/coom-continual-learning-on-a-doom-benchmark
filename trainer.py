@@ -318,7 +318,7 @@ else:
                 '''
             if 'owl' in MODEL_NAME:
                 task += 1
-        print(f"Episode {episode+1}, Reward: {episode_reward}")
+        print(f"Episode {episode+1}, Cumulative Reward: {episode_reward}")
 
 
 
