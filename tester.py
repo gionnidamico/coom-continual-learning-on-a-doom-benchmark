@@ -9,6 +9,7 @@ from COOM.utils.config import Scenario
 from COOM.env.continual import ContinualLearningEnv
 from COOM.utils.config import Sequence
 
+import cv2
 import os
 import argparse
 
@@ -18,7 +19,7 @@ parser = argparse.ArgumentParser(description="SAC Training Configuration")
 
 # Environment Config
 parser.add_argument('--resolution', type=str, default='1920X1080', choices=['160X120', '1920X1080'], help="Screen resolution")
-parser.add_argument('--render', type=bool, default=True, choices=[True, False], help="Render the environment")
+parser.add_argument('--render', type=bool, default=False, choices=[True, False], help="Render the environment")
 parser.add_argument('--sequence', type=str, default='None', choices=['None', 'CO4', 'CO8', 'COC'], help="Sequence type")
 parser.add_argument('--scenario', type=str, default='PITFALL', choices=['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING'], help="Scenario to run")
 parser.add_argument('--save_log', type=bool, default=False, help="Save or not reward and videos in the model folder")
@@ -63,10 +64,9 @@ device   = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 model.to(device)
 
-
-if not(SEQUENCE):    # test on a single scenario
-    env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
-
+# core function to test the model on one single scenario
+def test_on_scenario(env):
+    frame_list = [] # list of images to convert to video of the simulation
 
     state, _ = env.reset()
     #state = np.array(state)
@@ -75,6 +75,10 @@ if not(SEQUENCE):    # test on a single scenario
     done = False
     state = torch.FloatTensor(np.array(state)).to(device)   # [1, 4, 84, 84, 3]
     while not done:
+        img = env.render()
+        #img = np.transpose(img.screen_buffer, [1, 2, 0]) #if state else np.uint8(np.zeros(self.game_res))
+        frame_list.append(img[0])
+
         if 'owl' in MODEL:
             task = bandit.get_head()
         action = model.sample_action(state, batched=False, deterministic=True, task=task) 
@@ -98,7 +102,56 @@ if not(SEQUENCE):    # test on a single scenario
             next_actions_probs = model(state, batched=False, head=task)
             bandit.update(next_actions, next_actions_probs, action, action_probs, reward, done, gamma, device)
 
+    return episode_reward, frame_list
+
+
+
+
+def create_and_save_video(image_list, output_path, fps=10):
+    """
+    Creates a video from a list of images stored as NumPy arrays.
+
+    :param image_array_list: List of images as NumPy arrays.
+    :param output_path: File path where the video will be saved.
+    :param fps: Frames per second for the video. Default is 1.
+    """
+
+     # Convert the first image to a NumPy array to get dimensions
+    first_image = image_list[0]
+    height, width, layers = first_image.shape
+
+    # Define the codec and create a VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'DIVX')
+    video = cv2.VideoWriter(output_path+'/video.avi', fourcc, fps, (width, height))
+
+    # Loop through the list of images and write them to the video
+    for image in image_list:
+        # Ensure the image is in the right format
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        video.write(image)
+
+    # Release the video writer
+    video.release()
+
+    print(f"Video saved at {output_path}")
+
+
+# Example usage
+# image_list = ['image1.png', 'image2.png', 'image3.png']
+# output_path = 'output_video.avi'
+# create_video_from_images(image_list, output_path, fps=2)
+
+
+
+
+
+
+
+if not(SEQUENCE):    # test on a single scenario
+    env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
+    episode_reward, frame_list = test_on_scenario(env)
     print(f"{SCENARIO} - Reward: {episode_reward}")
+    create_and_save_video(frame_list, MODEL_PATH)
 
 
 
@@ -106,76 +159,17 @@ else:    # test on a Sequence
     done = False
     rewards_log = {}
 
-    cl_env = ContinualLearningEnv(sequence=SEQUENCE, resolution=RESOLUTION, render=RENDER)
+    cl_env = ContinualLearningEnv(sequence=SEQUENCE, resolution=RESOLUTION, render=RENDER) #, wrapper_config={'record':True, 'record_dir':MODEL_PATH}
     # if RENDER:
     #     cl_env.render()
 
     for env in cl_env.tasks:
-
-        state, _ = env.reset()
-        #state = np.array(state)
-        episode_reward = 0
-        task = 0
-        done = False
-        state = torch.FloatTensor(np.array(state)).to(device)   # [1, 4, 84, 84, 3]
-        while not done:
-            if 'owl' in MODEL:
-                task = bandit.get_head()
-            action = model.sample_action(state, batched=False, deterministic=True, task=task) 
-            action_probs = model(state, batched=False, head=task)
-            next_state, reward, done, truncated, _ = env.step(action)
-            next_state = torch.FloatTensor(np.array(next_state)).to(device)#.unsqueeze(0)
-            reward = torch.FloatTensor([reward]).to(device)#.unsqueeze(1)
-            done = torch.FloatTensor([done]).to(device)#.unsqueeze(1)
-            action = torch.LongTensor([action]).to(device)#.unsqueeze(0)
-
-            if MODEL == 'fc':
-                state = state.view(-1)
-                next_state = next_state.view(-1)
-
-            #print(action.item())
-            state = next_state
-            episode_reward += reward.item()
-
-            if 'owl' in MODEL:
-                next_actions = model.sample_action(state, batched=False, deterministic=True, task=task) 
-                next_actions_probs = model(state, batched=False, head=task)
-                bandit.update(next_actions, next_actions_probs, action, action_probs, reward, done, gamma, device)
-
-    print(f"{SEQUENCE} - Cumulative Reward: {episode_reward}")
-'''
-elif SEQUENCE == 'CO8':
-
-    done = False
-    tot_rew = 0
-    cl_env = ContinualLearningEnv(Sequence.CO8)
-    cl_env.render()
-    for env in cl_env.tasks:
-        # Initialize and use the environment
-        state, _ = env.reset()
-        state_array = np.array(state)
-        state_flattened = state_array.flatten()
-
-        for steps in range(1000):
-            action = model.get_action(torch.FloatTensor(state_flattened).unsqueeze(0)) #to(device) ?
-            next_state, reward, terminated, truncated, _ = env.step(action)
-            done = terminated or truncated    
-            
-            state_array = np.array(state)
-            state_flattened = state_array.flatten()
-            next_state_array = np.array(next_state)
-            next_state_flattened = next_state_array.flatten()
-            
-            tot_rew += reward
-            #print(action)
-            if done:
-                break
-            state_flattened = next_state_flattened
-
-print("Total reward: ", tot_rew)
-'''
-
-
-
+        #env = RecordVideo(env, video_folder='./videos', episode_trigger=lambda x: True) # Wrap the environment to record video
+        episode_reward = test_on_scenario(env)
+        rewards_log.append({env.env_name:episode_reward})
+    
+    
+    total_reward = sum([list(d.values())[0] for d in rewards_log])
+    print(f"{SEQUENCE} - Cumulative Reward: {total_reward}")
 
 
