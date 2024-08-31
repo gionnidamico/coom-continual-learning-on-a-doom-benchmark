@@ -122,7 +122,7 @@ def create_and_save_video(image_list, output_path, fps=10):
 
     # Define the codec and create a VideoWriter object
     fourcc = cv2.VideoWriter_fourcc(*'DIVX')
-    video = cv2.VideoWriter(output_path+'/video.avi', fourcc, fps, (width, height))
+    video = cv2.VideoWriter(output_path+'/'+SEQUENCE+SCENARIO+'video.avi', fourcc, fps, (width, height))
 
     # Loop through the list of images and write them to the video
     for image in image_list:
