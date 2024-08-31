@@ -35,6 +35,7 @@ parser.add_argument('--resolution', type=str, default='160X120', choices=['160X1
 parser.add_argument('--render', type=bool, default=False, choices=[True, False], help="Render the environment")
 parser.add_argument('--sequence', type=str, default='CO8', choices=['None','CO8', 'COC'], help="Sequence type")
 parser.add_argument('--scenario', type=str, default='PITFALL', choices=['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING'], help="Scenario to run")
+parser.add_argument('--repeat_scenarios', type=int, default=1, help="Repeat N times each scenario in the sequence for each episode")
 parser.add_argument('--skip', type=str, default='None', choices=['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING', 'None'], help="Scenario to skip, if any")
 
 # Regularization and PER
@@ -65,6 +66,7 @@ RESOLUTION = args.resolution
 RENDER = args.render       # If render is true, resolution is always 1920x1080 to match my screen
 SEQUENCE = None if args.sequence=='None' else eval(f'Sequence.{args.sequence}')  #'Single' #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
 SCENARIO = eval(f'Scenario.{args.scenario}')
+REPETITION_PER_SCENARIO = args.repeat_scenarios
 INDEX_TO_SKIP = -1 if args.skip=='None' else scenarios.index(args.skip)
 
 # train params
@@ -325,7 +327,7 @@ else:                   # else train on a sequence
                 count_env += 1
 
             # ...otherwise continue as usual
-            for _ in range(2):
+            for _ in range(REPETITION_PER_SCENARIO): #   repeat EACH scenario in a 
                 episode_reward, episode_policyloss = train_on_scenario(env, task)   # task is a counter only useful for owl to select the correct replay buffer 
                 episodes_reward.append(episode_reward)
                 episodes_policyloss.append(episode_policyloss)
