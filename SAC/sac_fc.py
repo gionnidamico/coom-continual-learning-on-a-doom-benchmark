@@ -45,6 +45,7 @@ class PolicyNetwork(nn.Module):
         super(PolicyNetwork, self).__init__()
         self.fc1 = nn.Linear(state_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.output_layerl = nn.ModuleList()
         for _ in range(n_head): # n_head is 1 if owl is not used else is = number of tasks
             self.output_layerl.append(nn.Linear(hidden_dim, num_actions))
 

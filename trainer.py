@@ -49,7 +49,7 @@ parser.add_argument('--episodes', type=int, default=3, help="Number of episodes 
 parser.add_argument('--gamma', type=float, default=0.99, help="Discount factor")
 parser.add_argument('--tau', type=float, default=0.005, help="soft update parameter")
 parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate for networks and optimizers")
-parser.add_argument('--hidden_dim', type=float, default=256, help="hidden_dim for networks")
+parser.add_argument('--hidden_dim', type=int, default=256, help="hidden_dim for networks")
 
 args = parser.parse_args()
 scenarios = ['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING']
