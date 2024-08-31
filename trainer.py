@@ -2,9 +2,6 @@ from statistics import mean
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
-import os
-
-import numpy as np
 
 from COOM.env.builder import make_env
 from COOM.utils.config import Scenario
@@ -12,10 +9,12 @@ from COOM.utils.config import Scenario
 from COOM.env.continual import ContinualLearningEnv
 from COOM.utils.config import Sequence
 
+import numpy as np
 import pickle
 import argparse
 from datetime import datetime
 import os
+#import tqdm
 
 ############################################################################
 'TRAINING CONFIGURATION'
@@ -34,8 +33,9 @@ parser.add_argument('--path', type=str, default='models/', help="Path to save th
 # Environment Config
 parser.add_argument('--resolution', type=str, default='160X120', choices=['160X120', '1920X1080'], help="Screen resolution")
 parser.add_argument('--render', type=bool, default=False, choices=[True, False], help="Render the environment")
-parser.add_argument('--sequence', type=str, default='CO8', choices=['None', 'CO4', 'CO8', 'COC'], help="Sequence type")
+parser.add_argument('--sequence', type=str, default='CO8', choices=['None','CO8', 'COC'], help="Sequence type")
 parser.add_argument('--scenario', type=str, default='PITFALL', choices=['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING'], help="Scenario to run")
+parser.add_argument('--skip', type=str, default='None', choices=['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING', 'None'], help="Scenario to skip, if any")
 
 # Regularization and PER
 parser.add_argument('--reg', type=str, default='None', choices=['None','ewc', 'mas'], help="Type of regularization to use")
@@ -50,6 +50,7 @@ parser.add_argument('--tau', type=float, default=0.005, help="soft update parame
 parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate for networks and optimizers")
 
 args = parser.parse_args()
+scenarios = ['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING']
 
 # Clear cache
 torch.cuda.empty_cache()
@@ -64,6 +65,7 @@ RESOLUTION = args.resolution
 RENDER = args.render       # If render is true, resolution is always 1920x1080 to match my screen
 SEQUENCE = None if args.sequence=='None' else eval(f'Sequence.{args.sequence}')  #'Single' #Sequence.CO8             # SET TO 'Single' TO RUN THE SINGLE SCENARIO (set it on next line)
 SCENARIO = eval(f'Scenario.{args.scenario}')
+INDEX_TO_SKIP = -1 if args.skip=='None' else scenarios.index(args.skip)
 
 # train params
 EPISODES = args.episodes
@@ -304,13 +306,25 @@ if SEQUENCE == None:    # train on single scenario
         print(f"Episode {episode+1}, Reward: {episode_reward}")
 
 
-else:
+else:                   # else train on a sequence
     done = False
     tot_reward = 0
     cl_env = ContinualLearningEnv(SEQUENCE)
     for episode in range(EPISODES):
+        count_env = 0
         task = 0
         for env in cl_env.tasks:
+
+            # if you want to skip a scenario... 
+            if count_env == INDEX_TO_SKIP:
+                count_env += 1
+                if 'owl' in MODEL_NAME:     # make sure to update the task head if 'owl'
+                    task += 1
+                continue
+            else:
+                count_env += 1
+
+            # ...otherwise continue as usual
             for _ in range(2):
                 episode_reward, episode_policyloss = train_on_scenario(env, task)   # task is a counter only useful for owl to select the correct replay buffer 
                 episodes_reward.append(episode_reward)
@@ -324,6 +338,7 @@ else:
             if 'owl' in MODEL_NAME:
                 task += 1
         print(f"Episode {episode+1}, Cumulative Reward: {episode_reward}")
+
 
 
 
