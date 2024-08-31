@@ -255,7 +255,7 @@ def train_on_scenario(env, task = 0):
         done = torch.FloatTensor([done])#.to(device)
         action = torch.LongTensor([action])#.to(device)
 
-        if MODEL_NAME == 'fc':   # flatten the states
+        if 'fc' in MODEL_NAME:   # flatten the states
             state = state.view(-1)
             next_state = next_state.view(-1)
 

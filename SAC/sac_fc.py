@@ -27,14 +27,16 @@ class QNetwork(nn.Module):
         super(QNetwork, self).__init__()
         self.fc1 = nn.Linear(state_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.out = nn.Linear(hidden_dim, num_actions)
+        self.output_layerl = nn.ModuleList()
+        for _ in range(n_head): # n_head is 1 if owl is not used else is = number of tasks
+            self.output_layerl.append(nn.Linear(hidden_dim, num_actions))
 
     def forward(self, state, head = 0):
         #state_flattened = state.view(state.size(0), -1)  # [batch_size, 4*84*84*3]
         state_flattened = state
         x = F.relu(self.fc1(state_flattened))
         x = F.relu(self.fc2(x))
-        q_values = self.out(x)
+        q_values = self.output_layerl[head](x)
         return q_values
 
 # The PolicyNetwork outputs a probability distribution over actions.
@@ -43,7 +45,8 @@ class PolicyNetwork(nn.Module):
         super(PolicyNetwork, self).__init__()
         self.fc1 = nn.Linear(state_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.out = nn.Linear(hidden_dim, num_actions)
+        for _ in range(n_head): # n_head is 1 if owl is not used else is = number of tasks
+            self.output_layerl.append(nn.Linear(hidden_dim, num_actions))
 
     def forward(self, state, batched=True, head = 0):
         if batched:
@@ -54,7 +57,7 @@ class PolicyNetwork(nn.Module):
 
         x = F.relu(self.fc1(state_flattened))
         x = F.relu(self.fc2(x))
-        logits = self.out(x)
+        logits = self.output_layerl[head](x)
         probs = F.softmax(logits, dim=-1)
         return probs
     
