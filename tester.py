@@ -42,6 +42,9 @@ MODEL = args.model
 MODEL_PATH = os.path.join(args.path, args.model)  # creates a folder for each model trained
 print(f'Loading from {MODEL_PATH}...')
 
+# create test folder if not exists
+if not os.path.exists(MODEL_PATH+'/test_results'):
+    os.makedirs(MODEL_PATH+'/test_results')
 
 num_heads = 1
 
@@ -107,7 +110,7 @@ def test_on_scenario(env):
 
 
 
-def create_and_save_video(image_list, output_path, fps=10):
+def create_and_save_video(image_list, output_path, scenario_index:int=None, fps=10):
     """
     Creates a video from a list of images stored as NumPy arrays.
 
@@ -115,14 +118,17 @@ def create_and_save_video(image_list, output_path, fps=10):
     :param output_path: File path where the video will be saved.
     :param fps: Frames per second for the video. Default is 1.
     """
+    scenario_list = ['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING']
+    env_name = SCENARIO.name if scenario_index is None else scenario_list[scenario_index]
+    video_name = env_name+'.avi' if scenario_index is None else SEQUENCE.name+'_'+env_name+'.avi'
 
-     # Convert the first image to a NumPy array to get dimensions
+    # Convert the first image to a NumPy array to get dimensions
     first_image = image_list[0]
     height, width, layers = first_image.shape
 
     # Define the codec and create a VideoWriter object
     fourcc = cv2.VideoWriter_fourcc(*'DIVX')
-    video = cv2.VideoWriter(output_path+'/'+SEQUENCE+SCENARIO+'video.avi', fourcc, fps, (width, height))
+    video = cv2.VideoWriter(output_path+'/'+video_name, fourcc, fps, (width, height))
 
     # Loop through the list of images and write them to the video
     for image in image_list:
@@ -132,16 +138,19 @@ def create_and_save_video(image_list, output_path, fps=10):
 
     # Release the video writer
     video.release()
-
-    print(f"Video saved at {output_path}")
-
-
-# Example usage
-# image_list = ['image1.png', 'image2.png', 'image3.png']
-# output_path = 'output_video.avi'
-# create_video_from_images(image_list, output_path, fps=2)
+ 
+    print(f"\nVideo {video_name} saved at {output_path}")
 
 
+# save rewards in a txt file (append to it if it already exists)
+def save_reward(reward, output_path, file_name, scenario_index:int=None):   # when scenario_index is None, we are referring to a Single scenario and not a Sequence
+    scenario_list = ['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING']
+    env_name = SCENARIO if scenario_index is None else scenario_list[scenario_index]
+
+    print(f'{env_name}: Reward {reward}')
+    # Open the file in append mode ('a')
+    with open(output_path+'/'+file_name+'.txt', 'a') as file:
+        file.write(f'{env_name}: Reward {reward}\n')
 
 
 
@@ -151,25 +160,27 @@ if not(SEQUENCE):    # test on a single scenario
     env = make_env(scenario=SCENARIO, resolution=RESOLUTION, render=RENDER)
     episode_reward, frame_list = test_on_scenario(env)
     print(f"{SCENARIO} - Reward: {episode_reward}")
-    create_and_save_video(frame_list, MODEL_PATH)
+    create_and_save_video(frame_list, MODEL_PATH+'/test_results')
+    save_reward(episode_reward, MODEL_PATH+'/test_results', SCENARIO.name)
 
 
 
 else:    # test on a Sequence
     done = False
-    rewards_log = {}
+    rewards_log = []
+    count_env = 0
 
     cl_env = ContinualLearningEnv(sequence=SEQUENCE, resolution=RESOLUTION, render=RENDER) #, wrapper_config={'record':True, 'record_dir':MODEL_PATH}
-    # if RENDER:
-    #     cl_env.render()
-
     for env in cl_env.tasks:
         #env = RecordVideo(env, video_folder='./videos', episode_trigger=lambda x: True) # Wrap the environment to record video
-        episode_reward = test_on_scenario(env)
-        rewards_log.append({env.env_name:episode_reward})
+        episode_reward, frame_list = test_on_scenario(env)
+        rewards_log.append(episode_reward)
+        create_and_save_video(frame_list, MODEL_PATH+'/test_results', scenario_index=count_env)
+        save_reward(episode_reward, MODEL_PATH+'/test_results', SEQUENCE.name, scenario_index=count_env)
+        count_env += 1
+        
     
-    
-    total_reward = sum([list(d.values())[0] for d in rewards_log])
+    total_reward = sum(rewards_log)
     print(f"{SEQUENCE} - Cumulative Reward: {total_reward}")
 
 
