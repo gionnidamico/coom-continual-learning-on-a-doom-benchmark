@@ -39,7 +39,7 @@ parser.add_argument('--repeat_scenarios', type=int, default=1, help="Repeat N ti
 parser.add_argument('--skip', type=str, default='None', choices=['PITFALL', 'ARMS_DEALER', 'FLOOR_IS_LAVA', 'HIDE_AND_SEEK', 'CHAINSAW', 'RAISE_THE_ROOF','RUN_AND_GUN','HEALTH_GATHERING', 'None'], help="Scenario to skip, if any")
 
 # Regularization and PER
-parser.add_argument('--reg', type=str, default='None', choices=['None','ewc', 'mas'], help="Type of regularization to use")
+parser.add_argument('--reg', type=str, default='None', choices=['None','ewc', 'mas', 'L2'], help="Type of regularization to use")
 parser.add_argument('--use_per', type=bool, default=False, choices=[True, False], help="Use Prioritized Experience Replay (PER) Buffer")
 parser.add_argument('--use_multy_per', type=bool, default=True, choices=[True, False], help="Use one Experience Replay Buffer per head")
 parser.add_argument('--size_rb', type=int, default=1000, help="size of Experience Replay Buffer")
@@ -121,6 +121,9 @@ if REGULARIZATION == 'ewc':
 elif REGULARIZATION == 'mas':
     from Regularizators.mas import mas
     reg = mas()
+elif REGULARIZATION == 'L2':
+    from Regularizators.L2 import L2
+    reg = L2()
 
 if args.use_multy_per:
     num_PER = num_heads
@@ -350,7 +353,7 @@ with open(f'{SAVE_PATH}/model.pkl', 'wb') as file:
     pickle.dump(policy_net, file)
 
 plot_and_save(episodes_reward, f'Training of {MODEL_NAME} - Reward', 'Reward', f'{SAVE_PATH}reward.png')
-plot_and_save(np.array(episodes_policyloss), f'Training of {MODEL_NAME} - Policy Loss', 'Reward', f'{SAVE_PATH}policyloss.png')
+plot_and_save(np.array(episodes_policyloss), f'Training of {MODEL_NAME} - Policy Loss', 'Policy Loss', f'{SAVE_PATH}policyloss.png')
 
 
 # save parameters on file
