@@ -14,7 +14,7 @@ import pickle
 import argparse
 from datetime import datetime
 import os
-#import tqdm
+#from tqdm import tqdm
 
 ############################################################################
 'TRAINING CONFIGURATION'
@@ -80,12 +80,12 @@ LEARNING_RATE = args.lr
 # Plots loss/rewards over time and saves the plot as a PNG file 
 import matplotlib.pyplot as plt
 def plot_and_save(time_serie, title, label_name, path):
-    print(time_serie)
+    print(f'{label_name}: {time_serie}')
     plt.figure(figsize=(10, 6))
     plt.plot(time_serie, label=label_name)
     plt.title(title)
     plt.xlabel('Epoch')
-    plt.ylabel('Loss')
+    plt.ylabel(label_name)
     plt.legend()
     plt.grid(True)
     plt.savefig(path)
