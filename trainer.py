@@ -46,6 +46,7 @@ parser.add_argument('--size_rb', type=int, default=1000, help="size of Experienc
 # Training Parameters
 parser.add_argument('--episodes', type=int, default=3, help="Number of episodes for training")
 parser.add_argument('--gamma', type=float, default=0.99, help="Discount factor")
+parser.add_argument('--tau', type=float, default=0.005, help="soft update parameter")
 parser.add_argument('--lr', type=float, default=1e-4, help="Learning rate for networks and optimizers")
 
 args = parser.parse_args()
@@ -69,6 +70,7 @@ EPISODES = args.episodes
 REGULARIZATION = None if args.reg=='None' else args.reg
 USE_PER = args.use_per # if false, use the vanilla Replay Buffer instead
 GAMMA = args.gamma
+TAU = args.tau
 LEARNING_RATE = args.lr
 
 # Plots loss/rewards over time and saves the plot as a PNG file 
@@ -186,7 +188,7 @@ def policy_loss(state, q_net, policy_net, reg, task):
 
 
 # Training Step
-def update(state, action, reward, next_state, done, gamma, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg=None):
+def update(state, action, reward, next_state, done, gamma, tau, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg=None):
     
     # Flatten the state to fit in fully connected network
     #state_array = np.array(state)
@@ -214,6 +216,9 @@ def update(state, action, reward, next_state, done, gamma, value_net, q_net1, q_
     p_loss = policy_loss(state, q_net1, policy_net, reg, task)
     p_loss.backward()
     policy_optimizer.step()
+
+    for target_param, current_param in zip(q_net2.parameters(), q_net1.parameters()):
+        target_param.data.copy_(tau * current_param.data + (1 - tau) * target_param.data)
 
     return p_loss.detach().cpu()
 
@@ -258,7 +263,7 @@ def train_on_scenario(env, task = 0):
                 state_batch, action_batch, reward_batch, next_state_batch, done_batch = replay_buffers[task].sample(batch_size)    ### single batch
             #print(state_batch, action_batch, reward_batch, next_state_batch, done_batch)
             
-            policy_loss = update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, GAMMA, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg)
+            policy_loss = update(state_batch, action_batch, reward_batch, next_state_batch, done_batch, GAMMA, TAU, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer, task, reg)
             #update(state, action, reward, next_state, done, value_net, q_net1, q_net2, policy_net, value_optimizer, q_optimizer1, q_optimizer2, policy_optimizer)
             
             if USE_PER:
