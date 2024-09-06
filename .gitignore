@@ -36,3 +36,8 @@ models/2024-09-02_15-42-05_owl_conv_None/model.pkl
 models/2024-09-02_15-43-00_owl_conv_ewc/model.pkl
 batch_conv.txt
 batch_owl.txt
+batch_trainer_extra.txt
+.gitignore
+batch_trainer.txt
+batch1.txt
+batch2.txt
