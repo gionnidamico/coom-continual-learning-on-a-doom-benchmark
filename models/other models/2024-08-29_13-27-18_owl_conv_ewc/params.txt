@@ -1,0 +1,13 @@
+model: owl_conv
+path: models/
+resolution: 160X120
+render: False
+sequence: CO8
+scenario: PITFALL
+reg: ewc
+use_per: True
+use_multy_per: True
+size_rb: 1000
+episodes: 30
+gamma: 0.99
+lr: 0.0001

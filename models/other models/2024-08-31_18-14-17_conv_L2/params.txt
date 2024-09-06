@@ -1,0 +1,17 @@
+model: conv
+path: models/
+resolution: 160X120
+render: False
+sequence: CO8
+scenario: PITFALL
+repeat_scenarios: 2
+skip: None
+reg: L2
+use_per: True
+use_multy_per: True
+size_rb: 10000
+episodes: 60
+gamma: 0.99
+tau: 0.005
+lr: 0.0001
+hidden_dim: 512
