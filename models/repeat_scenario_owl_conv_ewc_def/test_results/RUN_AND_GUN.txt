@@ -1,0 +1,1 @@
+Scenario.RUN_AND_GUN: Reward 13.998077058436138
